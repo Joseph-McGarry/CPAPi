@@ -5,9 +5,16 @@ node_modules/
 
 # Expo
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
+
+# Build artifacts
+coverage/
+build/
+ios/
+android/
 
 # Native
 *.orig.*
@@ -16,6 +23,11 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+
+# SQLite
+*.db
+*.db-journal
+*.sqlite
 
 # Metro
 .metro-health-check*
