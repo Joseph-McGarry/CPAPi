@@ -39,7 +39,7 @@ Supplies include **Mask, Nose Cushion, Hose, Water Supply, and Filter**.
 
 ### 1. Clone and Install
 ```bash
-git clone https://github.com/YOUR_USERNAME/cpapi.git
+git clone https://github.com/Joseph-McGarry/cpapi.git
 cd cpapi
 npm install
 ```
