@@ -5,12 +5,13 @@ import * as Notifications from 'expo-notifications';
 import { Platform, useColorScheme, View, ActivityIndicator } from 'react-native';
 import { initDatabase, seedDefaults } from '../../lib/db';
 
-// Show alerts when a notification fires in foreground
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 

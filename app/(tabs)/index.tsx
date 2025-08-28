@@ -307,11 +307,37 @@ export default function RemindersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 24, fontWeight: '700' },
-  add: { backgroundColor: '#1976d2', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
-  addTxt: { color: '#fff', fontWeight: '700' },
+  container: { 
+    flex: 1, 
+    padding: 16 
+  },
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 12
+  },
+  title: { 
+    flex: 1,
+    marginTop: 30,
+    fontSize: 24, 
+    fontWeight: '700', 
+    textAlign: 'center', 
+    
+  },
+  add: { 
+    position: 'absolute',
+    marginTop: 30,
+    right: 0,
+    backgroundColor: '#1976d2',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10 
+  },
+  addTxt: { 
+    color: '#fff', 
+    fontWeight: '700' 
+  },
 
   card: { padding: 14, borderRadius: 12, marginBottom: 12 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 2 },

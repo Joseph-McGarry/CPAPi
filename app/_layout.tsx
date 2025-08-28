@@ -6,10 +6,12 @@ import { Platform, useColorScheme, View, ActivityIndicator, Text } from 'react-n
 import { initDatabase, seedDefaults } from '../lib/db';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
