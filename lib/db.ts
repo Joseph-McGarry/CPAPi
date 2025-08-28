@@ -51,10 +51,10 @@ export async function initDatabase(): Promise<void> {
   }
 
 const DEFAULTS: Array<Pick<SupplyRow, 'skey' | 'label' | 'intervalDays' | 'notifyHour' | 'notifyMinute'>> = [
-  { skey: 'Mask',          label: 'Mask',          intervalDays: 30, notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Nose Cushion',  label: 'Nose Cushion',  intervalDays: 7,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Mask Frame',          label: 'Mask Frame',          intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Nose Cushion',  label: 'Nose Cushion',  intervalDays: 14,  notifyHour: 21, notifyMinute: 0 },
   { skey: 'Hose',          label: 'Hose',          intervalDays: 90, notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Water Supply',  label: 'Water Supply',  intervalDays: 7,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Water Supply',  label: 'Water Supply',  intervalDays: 180,  notifyHour: 21, notifyMinute: 0 },
   { skey: 'Filter',        label: 'Filter',        intervalDays: 7,  notifyHour: 21, notifyMinute: 0 },
 ];
 

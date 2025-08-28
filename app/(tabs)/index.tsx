@@ -5,13 +5,15 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { getAllSupplies, getSupplyById, createSupply, updateSupplyById, 
-  deleteSupplyById, markReplacedNowById, updateNotificationId, type SupplyRow } 
-  from '../../lib/db';
-import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } 
-  from '../../lib/notifications';
+import {
+  getAllSupplies, getSupplyById, createSupply, updateSupplyById,
+  deleteSupplyById, markReplacedNowById, updateNotificationId, type SupplyRow
+} from '../../lib/db';
+import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } from '../../lib/notifications';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const INTERVALS = [
+  // { label: 'test', seconds: 5 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
   { label: '3 weeks', days: 21 },
@@ -22,18 +24,20 @@ const INTERVALS = [
 ];
 
 type Draft = {
-  id?: number;           // if present => editing
+  id?: number;
   label: string;
   intervalDays: number;
-  time: Date;            // holds hour & minute
+  time: Date;
 };
 
 export default function RemindersScreen() {
   const scheme = useColorScheme();
+  const insets = useSafeAreaInsets();
+
   const [rows, setRows] = useState<SupplyRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Modal state (used for both Add and Edit)
+  // Modal state
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
@@ -83,17 +87,14 @@ export default function RemindersScreen() {
     const hour = draft.time.getHours();
     const minute = draft.time.getMinutes();
     const label = (draft.label || '').trim() || 'Untitled';
-  
+
     if (draft.id) {
-      // EDIT: cancel previous notification if any
       const existing = await getSupplyById(draft.id);
       await updateSupplyById(draft.id, { label, intervalDays: draft.intervalDays, notifyHour: hour, notifyMinute: minute });
-  
       if (existing?.notificationId) {
         await cancelNotification(existing.notificationId);
         await updateNotificationId(draft.id, null);
       }
-  
       const updated = await getSupplyById(draft.id);
       if (updated) {
         const due = nextDueDate(updated.lastReplaced, updated.intervalDays, updated.notifyHour, updated.notifyMinute);
@@ -101,22 +102,15 @@ export default function RemindersScreen() {
         await updateNotificationId(updated.id, newId);
       }
     } else {
-      // CREATE
       const created = await createSupply(label, draft.intervalDays, hour, minute);
       const due = nextDueDate(created.lastReplaced, created.intervalDays, created.notifyHour, created.notifyMinute);
       const newId = await scheduleOneShotNotificationFor(`Replace ${created.label}`, `Time to replace your ${created.label}.`, due);
       await updateNotificationId(created.id, newId);
     }
-  
+
     setOpen(false);
     setDraft(null);
     setShowTime(false);
-    await load();
-  };
-  
-
-  const onDelete = async (id: number) => {
-    await deleteSupplyById(id);
     await load();
   };
 
@@ -126,14 +120,13 @@ export default function RemindersScreen() {
       await cancelNotification(current.notificationId);
       await updateNotificationId(r.id, null);
     }
-  
     await markReplacedNowById(r.id);
     const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
     const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
     await updateNotificationId(r.id, newId);
     await load();
   };
-  
+
   const confirmDelete = async (row: SupplyRow) => {
     Alert.alert(
       'Delete reminder?',
@@ -145,9 +138,7 @@ export default function RemindersScreen() {
           style: 'destructive',
           onPress: async () => {
             const fresh = await getSupplyById(row.id);
-            if (fresh?.notificationId) {
-              await cancelNotification(fresh.notificationId);
-            }
+            if (fresh?.notificationId) await cancelNotification(fresh.notificationId);
             await deleteSupplyById(row.id);
             await load();
           },
@@ -156,11 +147,10 @@ export default function RemindersScreen() {
       { cancelable: true }
     );
   };
-  
+
   const renderItem = ({ item }: { item: SupplyRow }) => {
     const due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
     const daysLeft = Math.max(0, Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-
     return (
       <View style={[styles.card, { backgroundColor: cardBg }]}>
         <View style={{ flex: 1 }}>
@@ -190,13 +180,16 @@ export default function RemindersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bg }]}>
-      <View style={styles.header}>
+      {/* Header: device-aware top padding, centered title, Add pinned right */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.side} />
         <Text style={[styles.title, { color: fg }]}>CPAPi</Text>
         <Pressable style={styles.add} onPress={startAdd}>
           <Text style={styles.addTxt}>+ Add</Text>
         </Pressable>
       </View>
 
+      {/* List */}
       <FlatList
         data={rows}
         keyExtractor={(it) => String(it.id)}
@@ -212,12 +205,7 @@ export default function RemindersScreen() {
       />
 
       {/* Add/Edit Modal */}
-      <Modal
-        visible={open}
-        animationType="slide"
-        transparent
-        onRequestClose={cancelDraft}
-      >
+      <Modal visible={open} animationType="slide" transparent onRequestClose={cancelDraft}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalWrap}
@@ -273,7 +261,7 @@ export default function RemindersScreen() {
               >
                 <Text style={{ color: fg }}>
                   {draft
-                    ? `${String(draft.time.getHours()).padStart(2,'0')}:${String(draft.time.getMinutes()).padStart(2,'0')}`
+                    ? `${String(draft.time.getHours()).padStart(2, '0')}:${String(draft.time.getMinutes()).padStart(2, '0')}`
                     : '--:--'}
                 </Text>
               </Pressable>
@@ -307,55 +295,65 @@ export default function RemindersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    padding: 16 
+  // Screen
+  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16 },
+
+  // Header: 3-column pattern (spacer | centered title | Add)
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    marginBottom: 12,
   },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 12
+  side: { flex: 1 },
+  title: {
+    flex: 2,
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
   },
-  title: { 
+  add: {
     flex: 1,
-    marginTop: 30,
-    fontSize: 24, 
-    fontWeight: '700', 
-    textAlign: 'center', 
-    
+    alignItems: 'flex-end',
   },
-  add: { 
-    position: 'absolute',
-    marginTop: 30,
-    right: 0,
+  addTxt: {
     backgroundColor: '#1976d2',
+    color: '#fff',
+    fontWeight: '700',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 10 
-  },
-  addTxt: { 
-    color: '#fff', 
-    fontWeight: '700' 
+    borderRadius: 10,
+    overflow: 'hidden',
   },
 
+  // Cards
   card: { padding: 14, borderRadius: 12, marginBottom: 12 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 2 },
   rowBtns: { flexDirection: 'row', gap: 8, marginTop: 10 },
 
-  btn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  btn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   btnTxt: { color: '#fff', fontWeight: '700' },
   replaced: { backgroundColor: '#2e7d32' },
   edit: { backgroundColor: '#6a1b9a' },
   delete: { backgroundColor: '#c62828' },
 
-  // Modal layout
+  // Modal
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   modalCard: { maxHeight: '92%', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
   modalHeader: {
-    paddingHorizontal: 12, paddingVertical: 10,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: 'transparent'
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
   },
   modalHeaderBtn: { fontSize: 16, fontWeight: '700' },
   modalTitle: { fontSize: 18, fontWeight: '700' },
@@ -369,7 +367,10 @@ const styles = StyleSheet.create({
 
   iosTimeWrap: { marginTop: 8, borderRadius: 12, overflow: 'hidden' },
   iosToolbar: {
-    paddingHorizontal: 12, paddingVertical: 8,
-    alignItems: 'flex-end', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#444'
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#444',
   },
 });
