@@ -11,9 +11,12 @@ import {
 } from '../../lib/db';
 import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } from '../../lib/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+
 
 const INTERVALS = [
-  // { label: 'test', seconds: 5 },
+  { label: 'test', seconds: 5 },
+  { label: '1 day', day: 1 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
   { label: '3 weeks', days: 21 },
@@ -42,8 +45,9 @@ export default function RemindersScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
 
-  const bg = scheme === 'dark' ? '#111' : '#fff';
-  const cardBg = scheme === 'dark' ? '#1e1e1e' : '#f7f7f7';
+  const bg = scheme === 'dark' ? '#111' : '#4f586b'; //#ebf0fc
+
+  const cardBg = scheme === 'dark' ? '#1e1e1e' : '#eeeee4';
   const fg = scheme === 'dark' ? '#fff' : '#000';
   const sub = scheme === 'dark' ? '#ccc' : '#555';
   const border = scheme === 'dark' ? '#444' : '#ccc';
@@ -149,8 +153,48 @@ export default function RemindersScreen() {
   };
 
   const renderItem = ({ item }: { item: SupplyRow }) => {
-    const due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
-    const daysLeft = Math.max(0, Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+    // const due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
+    const due = nextDueDate(
+      item.lastReplaced,
+      item.intervalDays,
+      item.notifyHour,
+      item.notifyMinute
+    );
+
+    const now = Date.now();
+    const dueMs = due.getTime();
+    const msDay = 24 * 60 * 60 * 1000;
+    const diffMs = dueMs - now;
+
+    // const daysLeft = Math.max(0, Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    const daysLeft = Math.ceil(diffMs / msDay);
+
+    const daysOverdue = Math.floor((now - dueMs) / msDay);
+    let statusText = '';
+    let statusColor = sub;
+    let isBold = false;
+
+    if (diffMs >= 0) {
+      // Not expired
+      if (daysLeft === 1) {
+        statusText = 'REPLACE TODAY';
+        statusColor = '#d9534f';
+        isBold = true;
+      } else {
+        statusText = `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+        statusColor = daysLeft <= 1 ? '#d9534f' : sub;
+      }
+    } else {
+      // Expired
+      statusText =
+        daysOverdue <= 0
+          ? 'EXPIRED' // same-day past due but less than 24h
+          : `EXPIRED by ${daysOverdue} day${daysOverdue === 1 ? '' : 's'}`;
+      statusColor = '#d9534f';
+      isBold = true;
+    }
+
     return (
       <View style={[styles.card, { backgroundColor: cardBg }]}>
         <View style={{ flex: 1 }}>
@@ -158,20 +202,24 @@ export default function RemindersScreen() {
           <Text style={{ color: sub }}>
             Interval: {item.intervalDays} days • Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
           </Text>
-          <Text style={{ color: daysLeft <= 1 ? '#d9534f' : sub, marginTop: 4 }}>
-            {daysLeft} day{daysLeft === 1 ? '' : 's'} left
+          <Text style={{ color: daysLeft <= 1 ? '#d9534f' : sub, marginTop: 4, fontWeight: isBold ? '700' : '400' }}>
+            {/* {daysLeft} day{daysLeft === 1 ? '' : 's'} left */}
+            {statusText}
           </Text>
         </View>
 
         <View style={styles.rowBtns}>
           <Pressable style={[styles.btn, styles.delete]} onPress={() => confirmDelete(item)}>
-            <Text style={styles.btnTxt}>Delete</Text>
+            <Ionicons name="trash" size={18} color="#fff" />
+            {/* <Text style={styles.btnTxt}>Delete</Text> */}
           </Pressable>
           <Pressable style={[styles.btn, styles.edit]} onPress={() => startEdit(item)}>
-            <Text style={styles.btnTxt}>Edit</Text>
+            <MaterialIcons name="edit" size={18} color="#fff" />
+            {/* <Text style={styles.btnTxt}>Edit</Text> */}
           </Pressable>
           <Pressable style={[styles.btn, styles.replaced]} onPress={() => onReplaced(item)}>
-            <Text style={styles.btnTxt}>Replaced</Text>
+            <Ionicons name="refresh" size={18} color="#fff" />
+            {/* <Text style={styles.btnTxt}>Replaced</Text> */}
           </Pressable>
         </View>
       </View>
@@ -296,7 +344,11 @@ export default function RemindersScreen() {
 
 const styles = StyleSheet.create({
   // Screen
-  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16 },
+  container: { 
+    flex: 1, 
+    paddingHorizontal: 16, 
+    paddingBottom: 16
+  },
 
   // Header: 3-column pattern (spacer | centered title | Add)
   header: {
@@ -305,6 +357,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 8,
     marginBottom: 12,
+    // borderBottomWidth: 2,
+    // borderBottomColor: '#ccc',
   },
   side: { flex: 1 },
   title: {
@@ -318,7 +372,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   addTxt: {
-    backgroundColor: '#1976d2',
+    backgroundColor: '#7687a0',
+    // backgroundColor: '#154c79',
     color: '#fff',
     fontWeight: '700',
     paddingVertical: 8,
@@ -327,6 +382,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
+
+  
   // Cards
   card: { padding: 14, borderRadius: 12, marginBottom: 12 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 2 },
@@ -340,9 +397,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   btnTxt: { color: '#fff', fontWeight: '700' },
-  replaced: { backgroundColor: '#2e7d32' },
-  edit: { backgroundColor: '#6a1b9a' },
-  delete: { backgroundColor: '#c62828' },
+  replaced: { backgroundColor: '#7687a0' },
+  edit: { backgroundColor: '#7687a0' },
+  delete: { backgroundColor: '#7687a0' },
+
 
   // Modal
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },

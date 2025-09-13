@@ -28,34 +28,34 @@ async function getDb() {
 }
 
 export async function initDatabase(): Promise<void> {
-    const db = await getDb();
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS supplies (
-        id INTEGER PRIMARY KEY NOT NULL,
-        skey TEXT UNIQUE NOT NULL,
-        label TEXT NOT NULL,
-        intervalDays INTEGER NOT NULL,
-        lastReplaced TEXT NOT NULL,
-        notifyHour INTEGER NOT NULL,
-        notifyMinute INTEGER NOT NULL
-      );
-    `);
-    // Add column if it doesn't exist (ignore error if it already exists)
-    try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN notificationId TEXT;`); } catch {}
-  }
-  
-  // 3) Add this helper:
-  export async function updateNotificationId(id: number, notificationId: string | null): Promise<void> {
-    const db = await getDb();
-    await db.runAsync(`UPDATE supplies SET notificationId=? WHERE id=?;`, [notificationId, id]);
-  }
+  const db = await getDb();
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS supplies (
+      id INTEGER PRIMARY KEY NOT NULL,
+      skey TEXT UNIQUE NOT NULL,
+      label TEXT NOT NULL,
+      intervalDays INTEGER NOT NULL,
+      lastReplaced TEXT NOT NULL,
+      notifyHour INTEGER NOT NULL,
+      notifyMinute INTEGER NOT NULL
+    );
+  `);
+  // Add column if it doesn't exist (ignore error if it already exists)
+  try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN notificationId TEXT;`); } catch {}
+}
+
+// 3) Add this helper:
+export async function updateNotificationId(id: number, notificationId: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(`UPDATE supplies SET notificationId=? WHERE id=?;`, [notificationId, id]);
+}
 
 const DEFAULTS: Array<Pick<SupplyRow, 'skey' | 'label' | 'intervalDays' | 'notifyHour' | 'notifyMinute'>> = [
-  { skey: 'Mask Frame',          label: 'Mask Frame',          intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Mask Frame',    label: 'Mask Frame',    intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
   { skey: 'Nose Cushion',  label: 'Nose Cushion',  intervalDays: 14,  notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Hose',          label: 'Hose',          intervalDays: 90, notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Water Supply',  label: 'Water Supply',  intervalDays: 180,  notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Filter',        label: 'Filter',        intervalDays: 7,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Hose',          label: 'Hose',          intervalDays: 90,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Water Supply',  label: 'Water Supply',  intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Filter',        label: 'Filter',        intervalDays: 7,   notifyHour: 21, notifyMinute: 0 },
 ];
 
 export async function seedDefaults(): Promise<void> {
@@ -70,9 +70,39 @@ export async function seedDefaults(): Promise<void> {
   }
 }
 
+/**
+ * Compute the next due Date from a row.
+ * Keeps logic consistent with the UI (no SQL date string pitfalls).
+ */
+function computeNextDueDate(
+  lastReplacedISO: string | null | undefined,
+  intervalDays: number,
+  notifyHour: number,
+  notifyMinute: number
+): Date {
+  const base = lastReplacedISO ? new Date(lastReplacedISO) : new Date();
+  // Add interval (days)
+  const due = new Date(base.getTime());
+  due.setDate(due.getDate() + (Number.isFinite(intervalDays) ? intervalDays : 0));
+  // Snap to notification time
+  due.setHours(notifyHour ?? 0, notifyMinute ?? 0, 0, 0);
+  return due;
+}
+
+/**
+ * Return all supplies ordered by soonest next due (ascending).
+ * Replaces the previous alphabetical ORDER BY label.
+ */
 export async function getAllSupplies(): Promise<SupplyRow[]> {
   const db = await getDb();
-  return await db.getAllAsync<SupplyRow>(`SELECT * FROM supplies ORDER BY label ASC;`);
+  const rows = await db.getAllAsync<SupplyRow>(`SELECT * FROM supplies;`);
+  return rows
+    .slice() // non-destructive
+    .sort((a, b) => {
+      const dueA = computeNextDueDate(a.lastReplaced, a.intervalDays, a.notifyHour, a.notifyMinute).getTime();
+      const dueB = computeNextDueDate(b.lastReplaced, b.intervalDays, b.notifyHour, b.notifyMinute).getTime();
+      return dueA - dueB; // soonest first
+    });
 }
 
 export async function getSupplyById(id: number): Promise<SupplyRow | null> {
@@ -137,4 +167,3 @@ export async function markReplacedNow(skey: SupplyKey): Promise<void> {
   const nowIso = new Date().toISOString();
   await db.runAsync(`UPDATE supplies SET lastReplaced=? WHERE skey=?;`, [nowIso, skey]);
 }
-
