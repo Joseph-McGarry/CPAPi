@@ -12,11 +12,12 @@ import {
 import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } from '../../lib/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 
 const INTERVALS = [
-  { label: 'test', seconds: 5 },
-  { label: '1 day', day: 1 },
+  { label: 'Expired', days: 0 },
+  { label: 'Test', days: 0 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
   { label: '3 weeks', days: 21 },
@@ -45,9 +46,9 @@ export default function RemindersScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
 
-  const bg = scheme === 'dark' ? '#111' : '#4f586b'; //#ebf0fc
-
-  const cardBg = scheme === 'dark' ? '#1e1e1e' : '#eeeee4';
+  // const bg = scheme === 'dark' ? '#111' : '#4f586b';
+  const cardBg = scheme === 'dark' ? '#09132a' : '#eeeee4';
+  const headerFg = scheme === 'dark' ? '#fff' : '#eeeee4';
   const fg = scheme === 'dark' ? '#fff' : '#000';
   const sub = scheme === 'dark' ? '#ccc' : '#555';
   const border = scheme === 'dark' ? '#444' : '#ccc';
@@ -153,9 +154,7 @@ export default function RemindersScreen() {
   };
 
   const renderItem = ({ item }: { item: SupplyRow }) => {
-
-    // const due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
-    const due = nextDueDate(
+    let due = nextDueDate(
       item.lastReplaced,
       item.intervalDays,
       item.notifyHour,
@@ -163,75 +162,94 @@ export default function RemindersScreen() {
     );
 
     const now = Date.now();
-    const dueMs = due.getTime();
     const msDay = 24 * 60 * 60 * 1000;
-    const diffMs = dueMs - now;
 
-    // const daysLeft = Math.max(0, Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-    const daysLeft = Math.ceil(diffMs / msDay);
+    if (__DEV__ && item.label === 'Expired') {
+      due = new Date(now - 3 * msDay);
+      due.setHours(item.notifyHour, item.notifyMinute, 0, 0);
+    }
 
-    const daysOverdue = Math.floor((now - dueMs) / msDay);
+    const diffMs = due.getTime() - now;
+    const diffDays = Math.floor(diffMs / msDay);
+    const absDays = Math.abs(diffDays);
+
     let statusText = '';
     let statusColor = sub;
     let isBold = false;
 
-    if (diffMs >= 0) {
-      // Not expired
-      if (daysLeft === 1) {
-        statusText = 'REPLACE TODAY';
-        statusColor = '#d9534f';
-        isBold = true;
-      } else {
-        statusText = `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
-        statusColor = daysLeft <= 1 ? '#d9534f' : sub;
-      }
+    if (diffDays > 0) {
+      statusText = `${diffDays} day${diffDays === 1 ? '' : 's'} left`;
+      statusColor = diffDays <= 1 ? '#d9534f' : sub;
+    } else if (diffDays === 0) {
+      statusText = 'REPLACE TODAY';
+      statusColor = '#d9534f';
+      isBold = true;
     } else {
-      // Expired
       statusText =
-        daysOverdue <= 0
-          ? 'EXPIRED' // same-day past due but less than 24h
-          : `EXPIRED by ${daysOverdue} day${daysOverdue === 1 ? '' : 's'}`;
+        absDays === 0
+          ? 'EXPIRED'
+          : `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
       statusColor = '#d9534f';
       isBold = true;
     }
 
     return (
       <View style={[styles.card, { backgroundColor: cardBg }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
-          <Text style={{ color: sub }}>
-            Interval: {item.intervalDays} days • Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
-          </Text>
-          <Text style={{ color: daysLeft <= 1 ? '#d9534f' : sub, marginTop: 4, fontWeight: isBold ? '700' : '400' }}>
-            {/* {daysLeft} day{daysLeft === 1 ? '' : 's'} left */}
-            {statusText}
-          </Text>
-        </View>
+        <View style={styles.cardRow}>
+          {/* LEFT COLUMN */}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
+            <Text style={{ color: sub }}>Interval: {item.intervalDays} days</Text>
+            <Text style={{ color: sub }}>
+              Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
+            </Text>
+            <Text
+              style={{
+                color: statusColor,
+                fontWeight: isBold ? '700' : '400',
+              }}
+            >
+              {statusText}
+            </Text>
+          </View>
 
-        <View style={styles.rowBtns}>
-          <Pressable style={[styles.btn, styles.delete]} onPress={() => confirmDelete(item)}>
-            <Ionicons name="trash" size={18} color="#fff" />
-            {/* <Text style={styles.btnTxt}>Delete</Text> */}
-          </Pressable>
-          <Pressable style={[styles.btn, styles.edit]} onPress={() => startEdit(item)}>
-            <MaterialIcons name="edit" size={18} color="#fff" />
-            {/* <Text style={styles.btnTxt}>Edit</Text> */}
-          </Pressable>
-          <Pressable style={[styles.btn, styles.replaced]} onPress={() => onReplaced(item)}>
-            <Ionicons name="refresh" size={18} color="#fff" />
-            {/* <Text style={styles.btnTxt}>Replaced</Text> */}
-          </Pressable>
+          {/* RIGHT COLUMN */}
+          <View style={styles.rightCol}>
+            <View style={styles.rowBtns}>
+
+              <Pressable style={[styles.btn, styles.replaced]} onPress={() => onReplaced(item)}>
+                <Ionicons name="refresh" size={18} color="#fff" />
+              </Pressable>
+
+              <Pressable style={[styles.btn, styles.edit]} onPress={() => startEdit(item)}>
+                <MaterialIcons name="edit" size={18} color="#fff" />
+              </Pressable>
+
+              <Pressable style={[styles.btn, styles.delete]} onPress={() => confirmDelete(item)}>
+                <Ionicons name="trash" size={18} color="#fff" />
+              </Pressable>
+
+              
+            </View>
+          </View>
         </View>
       </View>
     );
   };
-
+  // const bg = scheme === 'dark' ? '#111' : '#4f586b';
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
-      {/* Header: device-aware top padding, centered title, Add pinned right */}
+    <LinearGradient
+      colors={
+        scheme === 'dark'
+          ? ['#000000', '#19233c', '#000000']   // dark mode gradient
+          : ['#4f586b', '#8aa8c1', '#002646']   // light mode gradient
+      }
+      style={styles.container}
+    >
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.side} />
-        <Text style={[styles.title, { color: fg }]}>CPAPi</Text>
+        <Text style={[styles.title, { color: headerFg }]}>CPAPi beta</Text>
         <Pressable style={styles.add} onPress={startAdd}>
           <Text style={styles.addTxt}>+ Add</Text>
         </Pressable>
@@ -259,7 +277,6 @@ export default function RemindersScreen() {
           style={styles.modalWrap}
         >
           <View style={[styles.modalCard, { backgroundColor: cardBg }]}>
-            {/* Sticky header with Cancel / Save */}
             <View style={styles.modalHeader}>
               <Pressable onPress={cancelDraft}>
                 <Text style={[styles.modalHeaderBtn, { color: '#c62828' }]}>Cancel</Text>
@@ -272,11 +289,7 @@ export default function RemindersScreen() {
               </Pressable>
             </View>
 
-            <ScrollView
-              contentContainerStyle={styles.modalContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* Label */}
+            <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
               <Text style={[styles.label, { color: sub }]}>Label</Text>
               <TextInput
                 placeholder="e.g., Filter"
@@ -288,7 +301,6 @@ export default function RemindersScreen() {
                 style={[styles.input, { color: fg, borderColor: border }]}
               />
 
-              {/* Interval */}
               <Text style={[styles.label, { color: sub }]}>Interval</Text>
               <View style={[styles.pickerWrap, { borderColor: border }]}>
                 <Picker
@@ -301,12 +313,8 @@ export default function RemindersScreen() {
                 </Picker>
               </View>
 
-              {/* Time */}
               <Text style={[styles.label, { color: sub }]}>Notification Time</Text>
-              <Pressable
-                style={[styles.timeBtn, { borderColor: border }]}
-                onPress={() => setShowTime(true)}
-              >
+              <Pressable style={[styles.timeBtn, { borderColor: border }]} onPress={() => setShowTime(true)}>
                 <Text style={{ color: fg }}>
                   {draft
                     ? `${String(draft.time.getHours()).padStart(2, '0')}:${String(draft.time.getMinutes()).padStart(2, '0')}`
@@ -338,27 +346,19 @@ export default function RemindersScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  // Screen
-  container: { 
-    flex: 1, 
-    paddingHorizontal: 16, 
-    paddingBottom: 16
-  },
+  container: { flex: 1, paddingHorizontal: 16, paddingBottom: 16 },
 
-  // Header: 3-column pattern (spacer | centered title | Add)
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 8,
     marginBottom: 12,
-    // borderBottomWidth: 2,
-    // borderBottomColor: '#ccc',
   },
   side: { flex: 1 },
   title: {
@@ -367,13 +367,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  add: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
+  add: { flex: 1, alignItems: 'flex-end' },
   addTxt: {
     backgroundColor: '#7687a0',
-    // backgroundColor: '#154c79',
     color: '#fff',
     fontWeight: '700',
     paddingVertical: 8,
@@ -382,17 +378,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
+  card: { padding: 18, borderRadius: 16, marginBottom: 16 },
+  cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
 
-  
-  // Cards
-  card: { padding: 14, borderRadius: 12, marginBottom: 12 },
-  cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 2 },
-  rowBtns: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  cardRow: { flexDirection: 'row', alignItems: 'stretch' },
+  rightCol: { alignItems: 'flex-end', justifyContent: 'flex-end' },
+
+  rowBtns: { flexDirection: 'row', gap: 12 },
 
   btn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -401,8 +398,6 @@ const styles = StyleSheet.create({
   edit: { backgroundColor: '#7687a0' },
   delete: { backgroundColor: '#7687a0' },
 
-
-  // Modal
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   modalCard: { maxHeight: '92%', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
   modalHeader: {
@@ -411,7 +406,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'transparent',
   },
   modalHeaderBtn: { fontSize: 16, fontWeight: '700' },
   modalTitle: { fontSize: 18, fontWeight: '700' },
