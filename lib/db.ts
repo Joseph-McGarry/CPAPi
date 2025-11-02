@@ -51,11 +51,13 @@ export async function updateNotificationId(id: number, notificationId: string | 
 }
 
 const DEFAULTS: Array<Pick<SupplyRow, 'skey' | 'label' | 'intervalDays' | 'notifyHour' | 'notifyMinute'>> = [
-  { skey: 'Mask Frame',    label: 'Mask Frame',    intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Nose Cushion',  label: 'Nose Cushion',  intervalDays: 14,  notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Hose',          label: 'Hose',          intervalDays: 90,  notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Water Supply',  label: 'Water Supply',  intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
-  { skey: 'Filter',        label: 'Filter',        intervalDays: 7,   notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Mask Frame',       label: 'Mask Frame',      intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Nose Cushion',     label: 'Nose Cushion',    intervalDays: 14,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Hose',             label: 'Hose',            intervalDays: 90,  notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Water Supply',     label: 'Water Supply',    intervalDays: 180, notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Filter',           label: 'Filter',          intervalDays: 7,   notifyHour: 21, notifyMinute: 0 },
+  { skey: 'Distilled Water',  label: 'Distilled Water', intervalDays: 21,  notifyHour: 17, notifyMinute: 0 },
+  { skey: 'Clean Equipment',  label: 'Clean Equipment', intervalDays: 7,   notifyHour: 9, notifyMinute: 0 },
 ];
 
 export async function seedDefaults(): Promise<void> {
