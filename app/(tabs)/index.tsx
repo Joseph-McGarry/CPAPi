@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import MenuSheet from './Reminders/MenuSheet';
-import { Shadow } from 'react-native-shadow-2';
+// import { Shadow } from 'react-native-shadow-2';
 
 const INTERVALS = [
   { label: 'Expired', days: 0 },
@@ -198,6 +198,7 @@ export default function RemindersScreen() {
     let due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
     const now = Date.now();
     const msDay = 24 * 60 * 60 * 1000;
+    const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
 
     if (__DEV__ && item.label === 'Expired') {
       due = new Date(now - 3 * msDay);
@@ -241,6 +242,9 @@ export default function RemindersScreen() {
                 <Text style={{ color: sub }}>Interval: {item.intervalDays} days</Text>
                 <Text style={{ color: sub }}>
                   Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
+                </Text>
+                <Text style={{ color: sub }}>
+                  Last replaced: {last ? last.toLocaleDateString() : '—'}
                 </Text>
                 <Text style={{ color: statusColor, fontWeight: isBold ? '700' : '400' }}>
                   {statusText}
@@ -297,7 +301,7 @@ export default function RemindersScreen() {
         onRefresh={load}
         style={styles.list} 
         contentContainerStyle={styles.listContent}
-  removeClippedSubviews={false} 
+        removeClippedSubviews={false} 
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={renderItem}
         ListEmptyComponent={
