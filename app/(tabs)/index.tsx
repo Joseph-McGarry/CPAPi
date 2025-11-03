@@ -11,9 +11,10 @@ import {
 } from '../../lib/db';
 import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } from '../../lib/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-
+import MenuSheet from './Reminders/MenuSheet';
+import { Shadow } from 'react-native-shadow-2';
 
 const INTERVALS = [
   { label: 'Expired', days: 0 },
@@ -40,14 +41,18 @@ export default function RemindersScreen() {
 
   const [rows, setRows] = useState<SupplyRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
-  // Modal state
+  // Add/Edit modal state
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
 
-  // const bg = scheme === 'dark' ? '#111' : '#4f586b';
+  // Selected card for menu actions
+  const [selectedItem, setSelectedItem] = useState<SupplyRow | null>(null);
+
   const cardBg = scheme === 'dark' ? '#09132a' : '#eeeee4';
+  const selectedBg = scheme === 'dark' ? '#13284b' : '#c9d6e6';
   const headerFg = scheme === 'dark' ? '#fff' : '#eeeee4';
   const fg = scheme === 'dark' ? '#fff' : '#000';
   const sub = scheme === 'dark' ? '#ccc' : '#555';
@@ -59,12 +64,12 @@ export default function RemindersScreen() {
     setRows(data);
     setLoading(false);
   };
-
   useEffect(() => { load(); }, []);
 
   const fmtTime = (h: number, m: number) =>
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
+  /** Add/Edit flows */
   const startAdd = () => {
     const t = new Date();
     t.setHours(21, 0, 0, 0);
@@ -119,19 +124,7 @@ export default function RemindersScreen() {
     await load();
   };
 
-  const onReplaced = async (r: SupplyRow) => {
-    const current = await getSupplyById(r.id);
-    if (current?.notificationId) {
-      await cancelNotification(current.notificationId);
-      await updateNotificationId(r.id, null);
-    }
-    await markReplacedNowById(r.id);
-    const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
-    const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
-    await updateNotificationId(r.id, newId);
-    await load();
-  };
-
+  /** Delete flow */
   const confirmDelete = async (row: SupplyRow) => {
     Alert.alert(
       'Delete reminder?',
@@ -145,6 +138,7 @@ export default function RemindersScreen() {
             const fresh = await getSupplyById(row.id);
             if (fresh?.notificationId) await cancelNotification(fresh.notificationId);
             await deleteSupplyById(row.id);
+            if (selectedItem?.id === row.id) setSelectedItem(null);
             await load();
           },
         },
@@ -153,14 +147,55 @@ export default function RemindersScreen() {
     );
   };
 
-  const renderItem = ({ item }: { item: SupplyRow }) => {
-    let due = nextDueDate(
-      item.lastReplaced,
-      item.intervalDays,
-      item.notifyHour,
-      item.notifyMinute
-    );
+  /** Replace flow (kept simple for now) */
+  // const onReplaced = async (r: SupplyRow) => {
+  //   const current = await getSupplyById(r.id);
+  //   if (current?.notificationId) {
+  //     await cancelNotification(current.notificationId);
+  //     await updateNotificationId(r.id, null);
+  //   }
+  //   await markReplacedNowById(r.id);
+  //   const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
+  //   const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
+  //   await updateNotificationId(r.id, newId);
+  //   await load();
+  // };
 
+  const actuallyReplace = async (r: SupplyRow) => {
+    const current = await getSupplyById(r.id);
+    if (current?.notificationId) {
+      await cancelNotification(current.notificationId);
+      await updateNotificationId(r.id, null);
+    }
+    await markReplacedNowById(r.id);
+    const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
+    const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
+    await updateNotificationId(r.id, newId);
+    await load();
+  };
+  
+  const confirmReplace = (r: SupplyRow) => {
+    Alert.alert(
+      'Confirm Replace',
+      `Did you replace “${r.label}”?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => actuallyReplace(r) },
+      ],
+      { cancelable: true }
+    );
+  };
+  
+
+  /** Card render */
+  const renderItem = ({ item }: { item: SupplyRow }) => {
+    const isSelected = selectedItem?.id === item.id;
+
+    const toggleSelect = () => {
+      setSelectedItem(prev => (prev?.id === item.id ? null : item));
+    };
+
+    let due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
     const now = Date.now();
     const msDay = 24 * 60 * 60 * 1000;
 
@@ -185,74 +220,73 @@ export default function RemindersScreen() {
       statusColor = '#d9534f';
       isBold = true;
     } else {
-      statusText =
-        absDays === 0
-          ? 'EXPIRED'
-          : `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
+      statusText = `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
       statusColor = '#d9534f';
       isBold = true;
     }
 
     return (
-      <View style={[styles.card, { backgroundColor: cardBg }]}>
-        <View style={styles.cardRow}>
-          {/* LEFT COLUMN */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
-            <Text style={{ color: sub }}>Interval: {item.intervalDays} days</Text>
-            <Text style={{ color: sub }}>
-              Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
-            </Text>
-            <Text
-              style={{
-                color: statusColor,
-                fontWeight: isBold ? '700' : '400',
-              }}
-            >
-              {statusText}
-            </Text>
-          </View>
+      <Pressable onPress={toggleSelect}>
+        <View style={isSelected ? styles.glowWrap : undefined}>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: isSelected ? selectedBg : cardBg },
+            ]}
+          >
+            <View style={styles.cardRow}>
+              {/* LEFT */}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
+                <Text style={{ color: sub }}>Interval: {item.intervalDays} days</Text>
+                <Text style={{ color: sub }}>
+                  Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
+                </Text>
+                <Text style={{ color: statusColor, fontWeight: isBold ? '700' : '400' }}>
+                  {statusText}
+                </Text>
+              </View>
 
-          {/* RIGHT COLUMN */}
-          <View style={styles.rightCol}>
-            <View style={styles.rowBtns}>
-
-              <Pressable style={[styles.btn, styles.replaced]} onPress={() => onReplaced(item)}>
-                <Ionicons name="refresh" size={18} color="#fff" />
-              </Pressable>
-
-              <Pressable style={[styles.btn, styles.edit]} onPress={() => startEdit(item)}>
-                <MaterialIcons name="edit" size={18} color="#fff" />
-              </Pressable>
-
-              <Pressable style={[styles.btn, styles.delete]} onPress={() => confirmDelete(item)}>
-                <Ionicons name="trash" size={18} color="#fff" />
-              </Pressable>
-
-              
+              {/* RIGHT — ONLY Replace button */}
+              <View style={styles.rightCol}>
+                <Pressable style={[styles.btn]} onPress={() => confirmReplace(item)}>
+                  <Ionicons name="refresh" size={18} color="#fff" />
+                </Pressable>
+              </View>
             </View>
           </View>
+
+          {/* Android: white halo ring to mimic glow */}
+          {isSelected && Platform.OS === 'android' && (
+            <View pointerEvents="none" style={styles.glowRing} />
+          )}
         </View>
-      </View>
+      </Pressable>
+
     );
   };
-  // const bg = scheme === 'dark' ? '#111' : '#4f586b';
+
   return (
     <LinearGradient
       colors={
         scheme === 'dark'
-          ? ['#000000', '#19233c', '#000000']   // dark mode gradient
-          : ['#4f586b', '#8aa8c1', '#002646']   // light mode gradient
+          ? ['#000000', '#19233c', '#000000']
+          : ['#4f586b', '#8aa8c1', '#002646']
       }
       style={styles.container}
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.side}>
+          <Ionicons
+            name="menu"
+            size={28}
+            color={headerFg}
+            onPress={() => setMenuVisible(true)}
+          />
+        </View>
+        <Text style={[styles.title, { color: headerFg }]}>CPAPi</Text>
         <View style={styles.side} />
-        <Text style={[styles.title, { color: headerFg }]}>CPAPi beta</Text>
-        <Pressable style={styles.add} onPress={startAdd}>
-          <Text style={styles.addTxt}>+ Add</Text>
-        </Pressable>
       </View>
 
       {/* List */}
@@ -261,13 +295,28 @@ export default function RemindersScreen() {
         keyExtractor={(it) => String(it.id)}
         refreshing={loading}
         onRefresh={load}
+        style={styles.list} 
+        contentContainerStyle={styles.listContent}
+  removeClippedSubviews={false} 
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={renderItem}
         ListEmptyComponent={
           <Text style={{ color: sub, textAlign: 'center', marginTop: 40 }}>
-            No reminders yet. Tap “+ Add” to create one.
+            No reminders yet. Tap the menu to add one.
           </Text>
         }
+      />
+
+      {/* Bottom Sheet Menu */}
+      <MenuSheet
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        onAdd={() => {
+          setMenuVisible(false);
+          startAdd();
+        }}
+        onEdit={selectedItem ? () => { setMenuVisible(false); startEdit(selectedItem); } : undefined}
+        onDelete={selectedItem ? () => { setMenuVisible(false); confirmDelete(selectedItem); } : undefined}
       />
 
       {/* Add/Edit Modal */}
@@ -360,31 +409,22 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     marginBottom: 12,
   },
-  side: { flex: 1 },
-  title: {
-    flex: 2,
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  add: { flex: 1, alignItems: 'flex-end' },
-  addTxt: {
-    backgroundColor: '#7687a0',
-    color: '#fff',
-    fontWeight: '700',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
+  side: { flex: 1, alignItems: 'flex-start', justifyContent: 'center' },
+  title: { flex: 2, fontSize: 24, fontWeight: '700', textAlign: 'center' },
 
   card: { padding: 18, borderRadius: 16, marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
-
   cardRow: { flexDirection: 'row', alignItems: 'stretch' },
   rightCol: { alignItems: 'flex-end', justifyContent: 'flex-end' },
 
-  rowBtns: { flexDirection: 'row', gap: 12 },
+  list: {
+    overflow: 'visible',
+  },
+  listContent: {
+    paddingBottom: 24,
+    paddingTop: 8,
+    overflow: 'visible',
+  },
 
   btn: {
     paddingVertical: 10,
@@ -392,37 +432,54 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#7687a0',
   },
-  btnTxt: { color: '#fff', fontWeight: '700' },
-  replaced: { backgroundColor: '#7687a0' },
-  edit: { backgroundColor: '#7687a0' },
-  delete: { backgroundColor: '#7687a0' },
-
+  cardSelected: {
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    // Android elevation
+    elevation: 8,
+  },
+  glowWrap: {
+    borderRadius: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#ffffff',
+        shadowOffset: { width: 0, height: 0 }, // 360° glow
+        shadowOpacity: 0.7,
+        shadowRadius: 5, // increase for larger halo
+      },
+      android: {}, // Android uses the ring below
+    }),
+  },
+  
+  glowRing: {
+    position: 'absolute',
+    top: -4,
+    bottom: -4,
+    left: -4,
+    right: -4,
+    borderRadius: 20,
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.35)',   // soft white ring
+    backgroundColor: 'rgba(255,255,255,0.06)' // faint veil for glow feel
+  },
+  
+  
+  /** Add/Edit modal */
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   modalCard: { maxHeight: '92%', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
-  modalHeader: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  modalHeader: { paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modalHeaderBtn: { fontSize: 16, fontWeight: '700' },
   modalTitle: { fontSize: 18, fontWeight: '700' },
   modalContent: { paddingHorizontal: 16, paddingBottom: 24 },
-
   label: { fontSize: 12, marginTop: 6, marginBottom: 4 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10 },
-
   pickerWrap: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   timeBtn: { borderWidth: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
-
   iosTimeWrap: { marginTop: 8, borderRadius: 12, overflow: 'hidden' },
-  iosToolbar: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#444',
-  },
+  iosToolbar: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'flex-end', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#444' },
 });
