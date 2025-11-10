@@ -223,6 +223,23 @@ export default function RemindersScreen() {
     );
   };
 
+  function firstDueAfterLastReplaced(
+    lastReplacedISO: string | null,
+    intervalDays: number,
+    h: number,
+    m: number
+  ): Date {
+    // if missing, default to "now" so new reminders show “replace today” only on the day they’re created
+    const base = lastReplacedISO ? new Date(lastReplacedISO) : new Date();
+    // set due time on the base day first (so the hour/minute lock in)
+    base.setHours(h, m, 0, 0);
+    // add exactly one interval window
+    const due = new Date(base);
+    due.setDate(due.getDate() + intervalDays);
+    return due;
+  }
+  
+
   /** ---------- Card render ---------- */
   const renderItem = ({ item }: { item: SupplyRow }) => {
     const isSelected = selectedItem?.id === item.id;
@@ -231,16 +248,33 @@ export default function RemindersScreen() {
       setSelectedItem(prev => (prev?.id === item.id ? null : item));
     };
 
-    let due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
+    // let due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
+    // const now = Date.now();
+    // const msDay = 24 * 60 * 60 * 1000;
+      const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
+
+    let due = firstDueAfterLastReplaced(
+      item.lastReplaced,
+      item.intervalDays,
+      item.notifyHour,
+      item.notifyMinute
+    );
+
+    // if (__DEV__ && item.label === 'Expired') {
+    //   due = new Date(now - 3 * msDay);
+    //   due.setHours(item.notifyHour, item.notifyMinute, 0, 0);
+    // }
+
+    // DEV: force an expired visual for a specific label if you want
+    // if (__DEV__ && item.label === 'Expired') {
+    //   const msDay = 24 * 60 * 60 * 1000;
+    //   const forced = new Date(Date.now() - 3 * msDay);
+    //   forced.setHours(item.notifyHour, item.notifyMinute, 0, 0);
+    //   due = forced;
+    // }
+
     const now = Date.now();
     const msDay = 24 * 60 * 60 * 1000;
-    const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
-
-    if (__DEV__ && item.label === 'Expired') {
-      due = new Date(now - 3 * msDay);
-      due.setHours(item.notifyHour, item.notifyMinute, 0, 0);
-    }
-
     const diffMs = due.getTime() - now;
     const diffDays = Math.floor(diffMs / msDay);
     const absDays = Math.abs(diffDays);
@@ -261,6 +295,27 @@ export default function RemindersScreen() {
       statusColor = '#d9534f';
       isBold = true;
     }
+
+    // const diffMs = due.getTime() - now;
+    // const diffDays = Math.floor(diffMs / msDay);
+    // const absDays = Math.abs(diffDays);
+
+    // let statusText = '';
+    // let statusColor = sub;
+    // let isBold = false;
+
+    // if (diffDays > 0) {
+    //   statusText = `${diffDays} day${diffDays === 1 ? '' : 's'} left`;
+    //   statusColor = diffDays <= 1 ? '#d9534f' : sub;
+    // } else if (diffDays === 0) {
+    //   statusText = 'REPLACE TODAY';
+    //   statusColor = '#d9534f';
+    //   isBold = true;
+    // } else {
+    //   statusText = `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
+    //   statusColor = '#d9534f';
+    //   isBold = true;
+    // }
 
     return (
       <Pressable onPress={toggleSelect}>
