@@ -9,15 +9,16 @@ import {
   getAllSupplies, getSupplyById, createSupply, updateSupplyById,
   deleteSupplyById, markReplacedNowById, updateNotificationId, type SupplyRow
 } from '../../lib/db';
-import { nextDueDate, scheduleOneShotNotificationFor, cancelNotification } from '../../lib/notifications';
+import { nextDueDate } from '../../lib/notifications';
+import * as Notifications from 'expo-notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import MenuSheet from './Reminders/MenuSheet';
-// import { Shadow } from 'react-native-shadow-2';
+import type { DateTriggerInput } from 'expo-notifications';
+import BackgroundStars from './Reminders/BackgroundStars';
 
 const INTERVALS = [
-  { label: 'Expired', days: 0 },
   { label: 'Test', days: 0 },
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
@@ -69,7 +70,49 @@ export default function RemindersScreen() {
   const fmtTime = (h: number, m: number) =>
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-  /** Add/Edit flows */
+  /** ---------- Notification helpers (12h “nag” chain) ---------- */
+  const NAG_COUNT = 10; // 10 * 12h = 5 days of follow-ups
+  const MS_12H = 12 * 60 * 60 * 1000;
+
+  const parseIds = (raw?: string | null) =>
+    (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []) as string[];
+
+  const cancelAllByRaw = async (raw?: string | null) => {
+    const ids = parseIds(raw);
+    await Promise.all(ids.map(id => Notifications.cancelScheduledNotificationAsync(id)));
+  };
+
+  const scheduleOneShotAt = async (title: string, body: string, when: Date) => {
+    const trigger: DateTriggerInput = {
+      type: Notifications.SchedulableTriggerInputTypes.DATE, // ✅ enum value
+      date: when,
+      // channelId: 'default', // optional on Android if you created a channel
+    };
+  
+    return Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: true },
+      trigger,
+    });
+  };
+
+  // schedules initial due + N follow-ups every 12h; stores IDs comma-separated
+  const scheduleDueWithNags = async (supplyId: number, label: string, due: Date) => {
+    const title = `Replace ${label}`;
+    const body = `Time to replace your ${label}.`;
+
+    const ids: string[] = [];
+    ids.push(await scheduleOneShotAt(title, body, due));
+
+    for (let k = 1; k <= NAG_COUNT; k++) {
+      const t = new Date(due.getTime() + k * MS_12H);
+      ids.push(await scheduleOneShotAt(title, body, t));
+    }
+
+    await updateNotificationId(supplyId, ids.join(','));
+    return ids;
+  };
+
+  /** ---------- Add/Edit flows ---------- */
   const startAdd = () => {
     const t = new Date();
     t.setHours(21, 0, 0, 0);
@@ -100,22 +143,25 @@ export default function RemindersScreen() {
 
     if (draft.id) {
       const existing = await getSupplyById(draft.id);
-      await updateSupplyById(draft.id, { label, intervalDays: draft.intervalDays, notifyHour: hour, notifyMinute: minute });
+      // cancel any previously queued notifications for this item
       if (existing?.notificationId) {
-        await cancelNotification(existing.notificationId);
+        await cancelAllByRaw(existing.notificationId);
         await updateNotificationId(draft.id, null);
       }
+
+      await updateSupplyById(draft.id, {
+        label, intervalDays: draft.intervalDays, notifyHour: hour, notifyMinute: minute
+      });
+
       const updated = await getSupplyById(draft.id);
       if (updated) {
         const due = nextDueDate(updated.lastReplaced, updated.intervalDays, updated.notifyHour, updated.notifyMinute);
-        const newId = await scheduleOneShotNotificationFor(`Replace ${updated.label}`, `Time to replace your ${updated.label}.`, due);
-        await updateNotificationId(updated.id, newId);
+        await scheduleDueWithNags(updated.id, updated.label, due);
       }
     } else {
       const created = await createSupply(label, draft.intervalDays, hour, minute);
       const due = nextDueDate(created.lastReplaced, created.intervalDays, created.notifyHour, created.notifyMinute);
-      const newId = await scheduleOneShotNotificationFor(`Replace ${created.label}`, `Time to replace your ${created.label}.`, due);
-      await updateNotificationId(created.id, newId);
+      await scheduleDueWithNags(created.id, created.label, due);
     }
 
     setOpen(false);
@@ -124,7 +170,7 @@ export default function RemindersScreen() {
     await load();
   };
 
-  /** Delete flow */
+  /** ---------- Delete flow ---------- */
   const confirmDelete = async (row: SupplyRow) => {
     Alert.alert(
       'Delete reminder?',
@@ -136,7 +182,7 @@ export default function RemindersScreen() {
           style: 'destructive',
           onPress: async () => {
             const fresh = await getSupplyById(row.id);
-            if (fresh?.notificationId) await cancelNotification(fresh.notificationId);
+            if (fresh?.notificationId) await cancelAllByRaw(fresh.notificationId);
             await deleteSupplyById(row.id);
             if (selectedItem?.id === row.id) setSelectedItem(null);
             await load();
@@ -147,33 +193,24 @@ export default function RemindersScreen() {
     );
   };
 
-  /** Replace flow (kept simple for now) */
-  // const onReplaced = async (r: SupplyRow) => {
-  //   const current = await getSupplyById(r.id);
-  //   if (current?.notificationId) {
-  //     await cancelNotification(current.notificationId);
-  //     await updateNotificationId(r.id, null);
-  //   }
-  //   await markReplacedNowById(r.id);
-  //   const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
-  //   const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
-  //   await updateNotificationId(r.id, newId);
-  //   await load();
-  // };
-
+  /** ---------- Replace flow (confirm + act) ---------- */
   const actuallyReplace = async (r: SupplyRow) => {
     const current = await getSupplyById(r.id);
+    // cancel all pending nags for current cycle
     if (current?.notificationId) {
-      await cancelNotification(current.notificationId);
+      await cancelAllByRaw(current.notificationId);
       await updateNotificationId(r.id, null);
     }
+
+    // mark now, then schedule next cycle (due + nags)
     await markReplacedNowById(r.id);
+
     const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
-    const newId = await scheduleOneShotNotificationFor(`Replace ${r.label}`, `Time to replace your ${r.label}.`, due);
-    await updateNotificationId(r.id, newId);
+    await scheduleDueWithNags(r.id, r.label, due);
+
     await load();
   };
-  
+
   const confirmReplace = (r: SupplyRow) => {
     Alert.alert(
       'Confirm Replace',
@@ -185,9 +222,8 @@ export default function RemindersScreen() {
       { cancelable: true }
     );
   };
-  
 
-  /** Card render */
+  /** ---------- Card render ---------- */
   const renderItem = ({ item }: { item: SupplyRow }) => {
     const isSelected = selectedItem?.id === item.id;
 
@@ -239,13 +275,24 @@ export default function RemindersScreen() {
               {/* LEFT */}
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
-                <Text style={{ color: sub }}>Interval: {item.intervalDays} days</Text>
+
                 <Text style={{ color: sub }}>
-                  Next: {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
+                  <Text style={styles.metaLabel}>Interval: </Text>
+                  <Text style={styles.metaValue}>{item.intervalDays} days</Text>
                 </Text>
+
                 <Text style={{ color: sub }}>
-                  Last replaced: {last ? last.toLocaleDateString() : '—'}
+                  <Text style={styles.metaLabel}>Next: </Text>
+                  <Text style={styles.metaValue}>
+                    {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
+                  </Text>
                 </Text>
+
+                <Text style={{ color: sub }}>
+                  <Text style={styles.metaLabel}>Last replaced: </Text>
+                  <Text style={styles.metaValue}>{last ? last.toLocaleDateString() : '—'}</Text>
+                </Text>
+
                 <Text style={{ color: statusColor, fontWeight: isBold ? '700' : '400' }}>
                   {statusText}
                 </Text>
@@ -266,19 +313,21 @@ export default function RemindersScreen() {
           )}
         </View>
       </Pressable>
-
     );
   };
 
   return (
     <LinearGradient
+    
       colors={
         scheme === 'dark'
-          ? ['#000000', '#19233c', '#000000']
-          : ['#4f586b', '#8aa8c1', '#002646']
+          ? ['#000208', '#19233c', '#000208'] //dark mode
+          : ['#4f586b', '#8aa8c1', '#002646'] //light mode
       }
       style={styles.container}
     >
+      <BackgroundStars visible={scheme === 'dark'} seed={42}  />
+      
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.side}>
@@ -299,10 +348,9 @@ export default function RemindersScreen() {
         keyExtractor={(it) => String(it.id)}
         refreshing={loading}
         onRefresh={load}
-        style={styles.list} 
+        style={styles.list}
         contentContainerStyle={styles.listContent}
-        removeClippedSubviews={false} 
-        contentContainerStyle={{ paddingBottom: 24 }}
+        removeClippedSubviews={false}
         renderItem={renderItem}
         ListEmptyComponent={
           <Text style={{ color: sub, textAlign: 'center', marginTop: 40 }}>
@@ -415,20 +463,22 @@ const styles = StyleSheet.create({
   },
   side: { flex: 1, alignItems: 'flex-start', justifyContent: 'center' },
   title: { flex: 2, fontSize: 24, fontWeight: '700', textAlign: 'center' },
+  
+  metaLabel: {
+    fontWeight: '600', 
+  },
+  metaValue: {
+    fontWeight: '400',
+  },
+  
 
   card: { padding: 18, borderRadius: 16, marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
   cardRow: { flexDirection: 'row', alignItems: 'stretch' },
   rightCol: { alignItems: 'flex-end', justifyContent: 'flex-end' },
 
-  list: {
-    overflow: 'visible',
-  },
-  listContent: {
-    paddingBottom: 24,
-    paddingTop: 8,
-    overflow: 'visible',
-  },
+  list: { overflow: 'visible' },
+  listContent: { paddingBottom: 24, paddingTop: 8, overflow: 'visible' },
 
   btn: {
     paddingVertical: 10,
@@ -438,41 +488,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#7687a0',
   },
-  cardSelected: {
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    // Android elevation
-    elevation: 8,
-  },
+
+  // iOS white glow (true shadow); Android uses a ring layer below
   glowWrap: {
     borderRadius: 16,
     ...Platform.select({
       ios: {
         shadowColor: '#ffffff',
-        shadowOffset: { width: 0, height: 0 }, // 360° glow
+        shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.7,
-        shadowRadius: 5, // increase for larger halo
+        shadowRadius: 5, // tweak to taste
       },
-      android: {}, // Android uses the ring below
+      android: {},
     }),
   },
-  
+
+  // Android-only white halo ring to mimic glow
   glowRing: {
     position: 'absolute',
-    top: -4,
-    bottom: -4,
-    left: -4,
-    right: -4,
+    top: -4, bottom: -4, left: -4, right: -4,
     borderRadius: 20,
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.35)',   // soft white ring
-    backgroundColor: 'rgba(255,255,255,0.06)' // faint veil for glow feel
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  
-  
+
   /** Add/Edit modal */
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   modalCard: { maxHeight: '92%', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
