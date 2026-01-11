@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, Pressable, Modal, TextInput,
   useColorScheme, Platform, KeyboardAvoidingView, ScrollView, Alert
@@ -15,8 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import MenuSheet from './Reminders/MenuSheet';
-import type { DateTriggerInput } from 'expo-notifications';
 import BackgroundStars from './Reminders/BackgroundStars';
+import type { DateTriggerInput } from 'expo-notifications';
 
 const INTERVALS = [
   { label: 'Test', days: 0 },
@@ -42,19 +42,30 @@ export default function RemindersScreen() {
 
   const [rows, setRows] = useState<SupplyRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Sheets / modals
   const [menuVisible, setMenuVisible] = useState(false);
+  const [aboutVisible, setAboutVisible] = useState(false);
+  const [actionsVisible, setActionsVisible] = useState(false);
 
   // Add/Edit modal state
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
 
-  // Selected card for menu actions
+  // selection
   const [selectedItem, setSelectedItem] = useState<SupplyRow | null>(null);
+
+  // small util to sequence UI safely
+  const afterCloseRef = useRef<number | null>(null);
+  const runNextFrame = (fn: () => void) => {
+    if (afterCloseRef.current) cancelAnimationFrame(afterCloseRef.current);
+    afterCloseRef.current = requestAnimationFrame(fn);
+  };
 
   const cardBg = scheme === 'dark' ? '#09132a' : '#eeeee4';
   const selectedBg = scheme === 'dark' ? '#13284b' : '#c9d6e6';
-  const headerFg = scheme === 'dark' ? '#fff' : '#eeeee4';
+  const headerFg = scheme === 'dark' ? '#fff' : '#0b1a30';
   const fg = scheme === 'dark' ? '#fff' : '#000';
   const sub = scheme === 'dark' ? '#ccc' : '#555';
   const border = scheme === 'dark' ? '#444' : '#ccc';
@@ -71,7 +82,7 @@ export default function RemindersScreen() {
     `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
   /** ---------- Notification helpers (12h “nag” chain) ---------- */
-  const NAG_COUNT = 10; // 10 * 12h = 5 days of follow-ups
+  const NAG_COUNT = 10; // 5 days of 12h nags
   const MS_12H = 12 * 60 * 60 * 1000;
 
   const parseIds = (raw?: string | null) =>
@@ -84,30 +95,25 @@ export default function RemindersScreen() {
 
   const scheduleOneShotAt = async (title: string, body: string, when: Date) => {
     const trigger: DateTriggerInput = {
-      type: Notifications.SchedulableTriggerInputTypes.DATE, // ✅ enum value
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: when,
-      // channelId: 'default', // optional on Android if you created a channel
     };
-  
     return Notifications.scheduleNotificationAsync({
       content: { title, body, sound: true },
       trigger,
     });
   };
 
-  // schedules initial due + N follow-ups every 12h; stores IDs comma-separated
   const scheduleDueWithNags = async (supplyId: number, label: string, due: Date) => {
     const title = `Replace ${label}`;
     const body = `Time to replace your ${label}.`;
 
     const ids: string[] = [];
     ids.push(await scheduleOneShotAt(title, body, due));
-
     for (let k = 1; k <= NAG_COUNT; k++) {
       const t = new Date(due.getTime() + k * MS_12H);
       ids.push(await scheduleOneShotAt(title, body, t));
     }
-
     await updateNotificationId(supplyId, ids.join(','));
     return ids;
   };
@@ -129,6 +135,18 @@ export default function RemindersScreen() {
     setOpen(true);
   };
 
+  // Safe openers that always close any sheet before opening the modal
+  const openAddSafely = () => {
+    setMenuVisible(false);
+    setActionsVisible(false);
+    runNextFrame(startAdd);
+  };
+  const openEditSafely = (item: SupplyRow) => {
+    setMenuVisible(false);
+    setActionsVisible(false);
+    runNextFrame(() => startEdit(item));
+  };
+
   const cancelDraft = () => {
     setOpen(false);
     setDraft(null);
@@ -137,38 +155,51 @@ export default function RemindersScreen() {
 
   const saveDraft = async () => {
     if (!draft) return;
+  
     const hour = draft.time.getHours();
     const minute = draft.time.getMinutes();
     const label = (draft.label || '').trim() || 'Untitled';
-
+  
     if (draft.id) {
       const existing = await getSupplyById(draft.id);
-      // cancel any previously queued notifications for this item
+  
       if (existing?.notificationId) {
         await cancelAllByRaw(existing.notificationId);
         await updateNotificationId(draft.id, null);
       }
-
+  
       await updateSupplyById(draft.id, {
-        label, intervalDays: draft.intervalDays, notifyHour: hour, notifyMinute: minute
+        label,
+        intervalDays: draft.intervalDays,
+        notifyHour: hour,
+        notifyMinute: minute,
       });
-
+  
       const updated = await getSupplyById(draft.id);
       if (updated) {
-        const due = nextDueDate(updated.lastReplaced, updated.intervalDays, updated.notifyHour, updated.notifyMinute);
+        const due = nextDueDate(
+          updated.lastReplaced,
+          updated.intervalDays,
+          updated.notifyHour,
+          updated.notifyMinute
+        );
         await scheduleDueWithNags(updated.id, updated.label, due);
       }
+  
+      // ✅ deselect the card after edit
+      setSelectedItem(null);
     } else {
       const created = await createSupply(label, draft.intervalDays, hour, minute);
       const due = nextDueDate(created.lastReplaced, created.intervalDays, created.notifyHour, created.notifyMinute);
       await scheduleDueWithNags(created.id, created.label, due);
     }
-
+  
     setOpen(false);
     setDraft(null);
     setShowTime(false);
     await load();
   };
+
 
   /** ---------- Delete flow ---------- */
   const confirmDelete = async (row: SupplyRow) => {
@@ -185,6 +216,7 @@ export default function RemindersScreen() {
             if (fresh?.notificationId) await cancelAllByRaw(fresh.notificationId);
             await deleteSupplyById(row.id);
             if (selectedItem?.id === row.id) setSelectedItem(null);
+            setActionsVisible(false);
             await load();
           },
         },
@@ -196,18 +228,13 @@ export default function RemindersScreen() {
   /** ---------- Replace flow (confirm + act) ---------- */
   const actuallyReplace = async (r: SupplyRow) => {
     const current = await getSupplyById(r.id);
-    // cancel all pending nags for current cycle
     if (current?.notificationId) {
       await cancelAllByRaw(current.notificationId);
       await updateNotificationId(r.id, null);
     }
-
-    // mark now, then schedule next cycle (due + nags)
     await markReplacedNowById(r.id);
-
     const due = nextDueDate(new Date().toISOString(), r.intervalDays, r.notifyHour, r.notifyMinute);
     await scheduleDueWithNags(r.id, r.label, due);
-
     await load();
   };
 
@@ -223,35 +250,38 @@ export default function RemindersScreen() {
     );
   };
 
+
+  /** Compute due after last replaced at fixed hour/min */
   function firstDueAfterLastReplaced(
     lastReplacedISO: string | null,
     intervalDays: number,
     h: number,
     m: number
   ): Date {
-    // if missing, default to "now" so new reminders show “replace today” only on the day they’re created
     const base = lastReplacedISO ? new Date(lastReplacedISO) : new Date();
-    // set due time on the base day first (so the hour/minute lock in)
     base.setHours(h, m, 0, 0);
-    // add exactly one interval window
     const due = new Date(base);
     due.setDate(due.getDate() + intervalDays);
     return due;
   }
-  
 
   /** ---------- Card render ---------- */
   const renderItem = ({ item }: { item: SupplyRow }) => {
     const isSelected = selectedItem?.id === item.id;
 
     const toggleSelect = () => {
-      setSelectedItem(prev => (prev?.id === item.id ? null : item));
+      setSelectedItem(prev => {
+        if (prev?.id === item.id) {
+          setActionsVisible(false);
+          return null;
+        } else {
+          setActionsVisible(true);
+          return item;
+        }
+      });
     };
 
-    // let due = nextDueDate(item.lastReplaced, item.intervalDays, item.notifyHour, item.notifyMinute);
-    // const now = Date.now();
-    // const msDay = 24 * 60 * 60 * 1000;
-      const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
+    const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
 
     let due = firstDueAfterLastReplaced(
       item.lastReplaced,
@@ -259,19 +289,6 @@ export default function RemindersScreen() {
       item.notifyHour,
       item.notifyMinute
     );
-
-    // if (__DEV__ && item.label === 'Expired') {
-    //   due = new Date(now - 3 * msDay);
-    //   due.setHours(item.notifyHour, item.notifyMinute, 0, 0);
-    // }
-
-    // DEV: force an expired visual for a specific label if you want
-    // if (__DEV__ && item.label === 'Expired') {
-    //   const msDay = 24 * 60 * 60 * 1000;
-    //   const forced = new Date(Date.now() - 3 * msDay);
-    //   forced.setHours(item.notifyHour, item.notifyMinute, 0, 0);
-    //   due = forced;
-    // }
 
     const now = Date.now();
     const msDay = 24 * 60 * 60 * 1000;
@@ -295,27 +312,6 @@ export default function RemindersScreen() {
       statusColor = '#d9534f';
       isBold = true;
     }
-
-    // const diffMs = due.getTime() - now;
-    // const diffDays = Math.floor(diffMs / msDay);
-    // const absDays = Math.abs(diffDays);
-
-    // let statusText = '';
-    // let statusColor = sub;
-    // let isBold = false;
-
-    // if (diffDays > 0) {
-    //   statusText = `${diffDays} day${diffDays === 1 ? '' : 's'} left`;
-    //   statusColor = diffDays <= 1 ? '#d9534f' : sub;
-    // } else if (diffDays === 0) {
-    //   statusText = 'REPLACE TODAY';
-    //   statusColor = '#d9534f';
-    //   isBold = true;
-    // } else {
-    //   statusText = `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
-    //   statusColor = '#d9534f';
-    //   isBold = true;
-    // }
 
     return (
       <Pressable onPress={toggleSelect}>
@@ -356,7 +352,7 @@ export default function RemindersScreen() {
               {/* RIGHT — ONLY Replace button */}
               <View style={styles.rightCol}>
                 <Pressable style={[styles.btn]} onPress={() => confirmReplace(item)}>
-                  <Ionicons name="refresh" size={18} color="#fff" />
+                  <Ionicons name="refresh" size={30} color="#fff" />
                 </Pressable>
               </View>
             </View>
@@ -371,60 +367,144 @@ export default function RemindersScreen() {
     );
   };
 
-  return (
-    <LinearGradient
-    
-      colors={
-        scheme === 'dark'
-          ? ['#000208', '#19233c', '#000208'] //dark mode
-          : ['#4f586b', '#8aa8c1', '#002646'] //light mode
-      }
-      style={styles.container}
-    >
-      <BackgroundStars visible={scheme === 'dark'} seed={42}  />
-      
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.side}>
-          <Ionicons
-            name="menu"
-            size={28}
-            color={headerFg}
-            onPress={() => setMenuVisible(true)}
-          />
-        </View>
-        <Text style={[styles.title, { color: headerFg }]}>CPAPi</Text>
-        <View style={styles.side} />
+  /** About content */
+  const renderAboutContent = () => (
+    <View style={{ gap: 10 }}>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: scheme === 'dark' ? '#fff' : '#000' }}>
+        CPAPi (Beta)
+      </Text>
+      <Text style={{ color: scheme === 'dark' ? '#ccc' : '#555', lineHeight: 22 }}>
+        A lightweight reminder app to keep CPAP supplies on schedule.
+      </Text>
+      <View style={{ gap: 6 }}>
+        <Text style={{ color: scheme === 'dark' ? '#ccc' : '#555' }}>• Intervals: weekly to 6 months</Text>
+        <Text style={{ color: scheme === 'dark' ? '#ccc' : '#555' }}>• 12-hour follow-up notifications</Text>
+        <Text style={{ color: scheme === 'dark' ? '#ccc' : '#555' }}>• One-tap replace confirmations</Text>
       </View>
+      <Text style={{ color: scheme === 'dark' ? '#ccc' : '#555' }}>
+        Thanks for testing the beta — your feedback shapes the next build.
+      </Text>
+    </View>
+  );
 
-      {/* List */}
-      <FlatList
-        data={rows}
-        keyExtractor={(it) => String(it.id)}
-        refreshing={loading}
-        onRefresh={load}
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        removeClippedSubviews={false}
-        renderItem={renderItem}
-        ListEmptyComponent={
-          <Text style={{ color: sub, textAlign: 'center', marginTop: 40 }}>
-            No reminders yet. Tap the menu to add one.
-          </Text>
+  return (
+    <>
+      <LinearGradient
+        colors={
+          scheme === 'dark'
+            ? ['#000208', '#19233c', '#000208']
+            : ['#4f586b', '#8aa8c1', '#002646']
         }
-      />
+        style={styles.container}
+      >
+        <BackgroundStars visible={scheme === 'dark'} seed={42} />
 
-      {/* Bottom Sheet Menu */}
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.side}>
+            <Ionicons
+              name="menu"
+              size={28}
+              color={headerFg}
+              onPress={() => setMenuVisible(true)}
+            />
+          </View>
+          <Text style={[styles.title, { color: headerFg }]}>CPAPi</Text>
+          <View style={styles.side} />
+        </View>
+
+        {/* List */}
+        <FlatList
+          data={rows}
+          keyExtractor={(it) => String(it.id)}
+          refreshing={loading}
+          onRefresh={load}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          removeClippedSubviews={false}
+          renderItem={renderItem}
+          ListEmptyComponent={
+            <Text style={{ color: sub, textAlign: 'center', marginTop: 40 }}>
+              No reminders yet. Tap the menu to add one.
+            </Text>
+          }
+        />
+      </LinearGradient>
+
+      {/* Main Menu */}
       <MenuSheet
         visible={menuVisible}
         onClose={() => setMenuVisible(false)}
-        onAdd={() => {
+        onAdd={openAddSafely}
+        onAbout={() => {
           setMenuVisible(false);
-          startAdd();
+          runNextFrame(() => setAboutVisible(true));
         }}
-        onEdit={selectedItem ? () => { setMenuVisible(false); startEdit(selectedItem); } : undefined}
-        onDelete={selectedItem ? () => { setMenuVisible(false); confirmDelete(selectedItem); } : undefined}
       />
+
+      {/* Selected Card Actions (Edit/Delete) */}
+      <Modal
+        visible={actionsVisible && !!selectedItem}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setActionsVisible(false);
+          setSelectedItem(null);
+        }}
+      >
+        <View style={actionsStyles.overlay}>
+          <Pressable
+            style={actionsStyles.overlayTop}
+            onPress={() => {
+              setActionsVisible(false);
+              setSelectedItem(null);
+            }}
+          />
+          <View style={[
+            actionsStyles.sheet,
+            { backgroundColor: scheme === 'dark' ? '#1a2233' : '#f0f0f0' }
+          ]}>
+            <Text style={[
+              actionsStyles.sheetTitle,
+              { color: scheme === 'dark' ? '#fff' : '#000' }
+            ]}>
+              {selectedItem ? selectedItem.label : 'Selected'}
+            </Text>
+
+            <Pressable
+              style={actionsStyles.option}
+              onPress={() => selectedItem && openEditSafely(selectedItem)}
+            >
+              <Ionicons name="build-outline" size={22} color={scheme === 'dark' ? '#fff' : '#000'} />
+              <Text style={[
+                actionsStyles.optionText,
+                { color: scheme === 'dark' ? '#fff' : '#000' }
+              ]}>Edit Reminder</Text>
+            </Pressable>
+
+            <Pressable
+              style={actionsStyles.option}
+              onPress={() => selectedItem && confirmDelete(selectedItem)}
+            >
+              <Ionicons name="trash-outline" size={22} color="#d9534f" />
+              <Text style={[actionsStyles.optionText, { color: '#d9534f' }]}>Delete Reminder</Text>
+            </Pressable>
+
+            <Pressable
+              style={actionsStyles.cancelBtn}
+              onPress={() => {
+                setActionsVisible(false);
+                setSelectedItem(null);
+              }}
+            >
+              <Text style={[
+                actionsStyles.cancelText,
+                { color: scheme === 'dark' ? '#ccc' : '#555' }
+              ]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Add/Edit Modal */}
       <Modal visible={open} animationType="slide" transparent onRequestClose={cancelDraft}>
@@ -502,7 +582,50 @@ export default function RemindersScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </LinearGradient>
+
+      {/* About Modal (centered) */}
+      <Modal
+        visible={aboutVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAboutVisible(false)}
+      >
+        <View style={aboutStyles.overlay}>
+          <Pressable style={aboutStyles.backdrop} onPress={() => setAboutVisible(false)} />
+          <View
+            style={[
+              aboutStyles.card,
+              {
+                backgroundColor: scheme === 'dark' ? '#0f1a2a' : '#ffffff',
+                borderColor: scheme === 'dark' ? '#2b3a54' : '#e4e4e4',
+              },
+            ]}
+          >
+            <View style={aboutStyles.header}>
+              <Text
+                style={[
+                  aboutStyles.title,
+                  { color: scheme === 'dark' ? '#fff' : '#000' },
+                ]}
+              >
+                About CPAPi
+              </Text>
+              <Pressable onPress={() => setAboutVisible(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={scheme === 'dark' ? '#fff' : '#000'} />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={aboutStyles.content}>
+              {renderAboutContent()}
+            </ScrollView>
+
+            <Pressable style={aboutStyles.closeBtn} onPress={() => setAboutVisible(false)}>
+              <Text style={aboutStyles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -515,17 +638,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 8,
     marginBottom: 12,
+    zIndex: 2,
   },
   side: { flex: 1, alignItems: 'flex-start', justifyContent: 'center' },
   title: { flex: 2, fontSize: 24, fontWeight: '700', textAlign: 'center' },
-  
-  metaLabel: {
-    fontWeight: '600', 
-  },
-  metaValue: {
-    fontWeight: '400',
-  },
-  
+
+  metaLabel: { fontWeight: '600' },
+  metaValue: { fontWeight: '400' },
 
   card: { padding: 18, borderRadius: 16, marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
@@ -544,7 +663,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#7687a0',
   },
 
-  // iOS white glow (true shadow); Android uses a ring layer below
   glowWrap: {
     borderRadius: 16,
     ...Platform.select({
@@ -552,13 +670,12 @@ const styles = StyleSheet.create({
         shadowColor: '#ffffff',
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.7,
-        shadowRadius: 5, // tweak to taste
+        shadowRadius: 5,
       },
       android: {},
     }),
   },
 
-  // Android-only white halo ring to mimic glow
   glowRing: {
     position: 'absolute',
     top: -4, bottom: -4, left: -4, right: -4,
@@ -581,4 +698,44 @@ const styles = StyleSheet.create({
   timeBtn: { borderWidth: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
   iosTimeWrap: { marginTop: 8, borderRadius: 12, overflow: 'hidden' },
   iosToolbar: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'flex-end', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#444' },
+});
+
+const actionsStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  overlayTop: { flex: 1 },
+  sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20 },
+  sheetTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  option: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },
+  optionText: { fontSize: 16 },
+  cancelBtn: { marginTop: 10, alignItems: 'center', paddingVertical: 10 },
+  cancelText: { fontSize: 15 },
+});
+
+const aboutStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backdrop: { ...StyleSheet.absoluteFillObject },
+  card: {
+    width: '88%',
+    maxHeight: '70%',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  title: { fontSize: 18, fontWeight: '700' },
+  content: { paddingVertical: 4 },
+  closeBtn: {
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: '#7687a0',
+  },
+  closeText: { color: '#fff', fontWeight: '700' },
 });

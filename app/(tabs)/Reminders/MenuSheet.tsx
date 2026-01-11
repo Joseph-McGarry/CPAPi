@@ -1,14 +1,12 @@
 import React from 'react';
-import { Linking } from 'react-native';
-import { Modal, View, Text, Pressable, StyleSheet, useColorScheme } from 'react-native';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Modal, View, Text, Pressable, StyleSheet, useColorScheme, Linking } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onAdd: () => void;
-  onEdit?: () => void;   // present only if a card is selected
-  onDelete?: () => void; // present only if a card is selected
+  onAbout: () => void;
 };
 
 const SURVEY_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfkRZMNzNRLjtLiZD6D56pXnp13e8uByYI3ZwWpSuBROXymKw/viewform?usp=header';
@@ -17,12 +15,10 @@ const openSurveyExternal = async () => {
   try {
     const supported = await Linking.canOpenURL(SURVEY_URL);
     if (supported) await Linking.openURL(SURVEY_URL);
-  } catch {
-    // optional: show an Alert
-  }
+  } catch {}
 };
 
-export default function MenuSheet({ visible, onClose, onAdd, onEdit, onDelete }: Props) {
+export default function MenuSheet({ visible, onClose, onAdd, onAbout }: Props) {
   const scheme = useColorScheme();
   const bg = scheme === 'dark' ? '#1a2233' : '#f0f0f0';
   const fg = scheme === 'dark' ? '#fff' : '#000';
@@ -42,24 +38,14 @@ export default function MenuSheet({ visible, onClose, onAdd, onEdit, onDelete }:
             <Text style={[styles.optionText, { color: fg }]}>Add Reminder</Text>
           </Pressable>
 
-          {onEdit && (
-            <Pressable style={styles.option} onPress={onEdit}>
-              <MaterialIcons name="edit" size={22} color={fg} />
-              <Text style={[styles.optionText, { color: fg }]}>Edit Reminder</Text>
-            </Pressable>
-          )}
-
-          {onDelete && (
-            <Pressable style={styles.option} onPress={onDelete}>
-              <Ionicons name="trash-outline" size={22} color="#d9534f" />
-              <Text style={[styles.optionText, { color: '#d9534f' }]}>Delete Reminder</Text>
-            </Pressable>
-          )}
-
-          {/* ✅ New: open Google Form in external browser */}
           <Pressable style={styles.option} onPress={openSurveyExternal}>
             <Ionicons name="open-outline" size={22} color={fg} />
             <Text style={[styles.optionText, { color: fg }]}>Beta Survey</Text>
+          </Pressable>
+
+          <Pressable style={styles.option} onPress={onAbout}>
+            <Ionicons name="information-circle-outline" size={22} color={fg} />
+            <Text style={[styles.optionText, { color: fg }]}>About</Text>
           </Pressable>
 
           <Pressable style={styles.cancelBtn} onPress={onClose}>
