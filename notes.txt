@@ -1,0 +1,8 @@
+- Add Onboarding for first time opening app
+- Quantity counter for equipment (inventory)
+- Beta rollout strategy (10 testers at a time)
+
+
+Features to specify when to re-order
+    - time in advance
+    - integrate into inventory system
