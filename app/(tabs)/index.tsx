@@ -117,8 +117,11 @@ export default function RemindersScreen() {
     load();
   }, []);
 
-  const fmtTime = (h: number, m: number) =>
-    `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  // const fmtTime = (h: number, m: number) =>
+  //   `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const fmtTime12 = (h: number, m: number) =>
+  new Date(0, 0, 0, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
 
   /** ---------- Notification helpers (12h “nag” chain) ---------- */
   const NAG_COUNT = 10; // 5 days of 12h nags
@@ -383,23 +386,6 @@ export default function RemindersScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
 
-                <Text style={{ color: sub }}>
-                  <Text style={styles.metaLabel}>Interval: </Text>
-                  <Text style={styles.metaValue}>{item.intervalDays} days</Text>
-                </Text>
-
-                <Text style={{ color: sub }}>
-                  <Text style={styles.metaLabel}>Next: </Text>
-                  <Text style={styles.metaValue}>
-                    {due.toLocaleDateString()} {fmtTime(item.notifyHour, item.notifyMinute)}
-                  </Text>
-                </Text>
-
-                <Text style={{ color: sub }}>
-                  <Text style={styles.metaLabel}>Last replaced: </Text>
-                  <Text style={styles.metaValue}>{last ? last.toLocaleDateString() : 'N/A'}</Text>
-                </Text>
-
                 <Text style={{ color: statusColor, fontWeight: isBold ? '700' : '400' }}>
                   {statusText}
                 </Text>
@@ -544,6 +530,92 @@ export default function RemindersScreen() {
             >
               {selectedItem ? selectedItem.label : 'Selected'}
             </Text>
+
+            {selectedItem && (
+              <View style={{ marginTop: 10 }}>
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#9aa7bd' : '#667',
+                    fontWeight: '600',
+                    marginLeft: 2,
+                  }}
+                >
+                  Details
+                </Text>
+
+                {/* divider */}
+                <View
+                  style={{
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.5)',
+                    marginVertical: 8,
+                  }}
+                />
+
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#fff' : '#000',
+                    opacity: 0.85,
+                    marginBottom: 4,
+                    marginLeft: 6,
+                  }}
+                >
+                  Interval: {selectedItem.intervalDays} days
+                </Text>
+
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#fff' : '#000',
+                    opacity: 0.85,
+                    marginBottom: 4,
+                    marginLeft: 6,
+                  }}
+                >
+                  Notification Time: {fmtTime12(selectedItem.notifyHour, selectedItem.notifyMinute)}
+                </Text>
+
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#fff' : '#000',
+                    opacity: 0.85,
+                    marginBottom: 4,
+                    marginLeft: 6,
+                  }}
+                >
+                  Next Replacement:{' '}
+                  {(() => {
+                    const due = nextDueDate(
+                      selectedItem.lastReplaced,
+                      selectedItem.intervalDays,
+                      selectedItem.notifyHour,
+                      selectedItem.notifyMinute
+                    );
+                    return due.toLocaleDateString(); // ✅ date only
+                  })()}
+                </Text>
+
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#fff' : '#000',
+                    opacity: 0.85,
+                    marginLeft: 6,
+                  }}
+                >
+                  Last Replaced: {new Date(selectedItem.lastReplaced).toLocaleDateString()}
+                </Text>
+
+                {/* divider */}
+                <View
+                  style={{
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.5)',
+                    marginVertical: 8,
+                  }}
+                />
+              </View>
+            )}
+
+
 
             <Pressable
               style={actionsStyles.option}
