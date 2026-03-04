@@ -27,8 +27,9 @@ Supplies include **Mask, Nose Cushion, Hose, Water Supply, and Filter**.
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="Reminders Screen" width="250" />
-  <img src="docs/screenshots/settings.png" alt="Settings Screen" width="250" />
-  <img src="docs/screenshots/notification.png" alt="Notification Example" width="250" />
+  <img src="docs/screenshots/details.png" alt="Settings Screen" width="250" />
+  <img src="docs/screenshots/add.png" alt="Notification Example" width="250" />
+  <img src="docs/screenshots/dark.png" alt="Notification Example" width="250" />
 </p>
 
 *(Screenshots coming soon — add iOS/Android captures in `docs/screenshots/`)*
