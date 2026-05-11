@@ -83,6 +83,10 @@ export default function RemindersScreen() {
   const [showTime, setShowTime] = useState(false);
   const [showLastReplaced, setShowLastReplaced] = useState(false);
 
+  // Post-replace success flash
+  const [justReplacedId, setJustReplacedId] = useState<number | null>(null);
+  const justReplacedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Star seed — refreshes every day at noon
   const [starSeed, setStarSeed] = useState(getDailySeed);
   useEffect(() => {
@@ -351,6 +355,10 @@ export default function RemindersScreen() {
 
       await scheduleDueWithNags(r.id, r.label, due);
       await load();
+
+      if (justReplacedTimerRef.current) clearTimeout(justReplacedTimerRef.current);
+      setJustReplacedId(r.id);
+      justReplacedTimerRef.current = setTimeout(() => setJustReplacedId(null), 1500);
     } catch (e: unknown) {
       console.error('actuallyReplace error:', e);
       Alert.alert('Error', 'Could not record replacement. Please try again.');
@@ -372,6 +380,7 @@ export default function RemindersScreen() {
   /** ---------- Card render ---------- */
   const renderItem = ({ item }: { item: SupplyRow }) => {
     const isSelected = selectedItem?.id === item.id;
+    const justReplaced = justReplacedId === item.id;
 
     const toggleSelect = () => {
       setSelectedItem(prev => {
@@ -385,9 +394,6 @@ export default function RemindersScreen() {
       });
     };
 
-    const last = item.lastReplaced ? new Date(item.lastReplaced) : null;
-
-    // ✅ Unified due logic: use nextDueDate everywhere
     const due = nextDueDate(
       item.lastReplaced,
       item.intervalDays,
@@ -399,9 +405,13 @@ export default function RemindersScreen() {
     const msDay = 24 * 60 * 60 * 1000;
     const diffMs = due.getTime() - now;
 
-    // ✅ Fix negative rounding so "overdue by minutes" doesn't become -1 day
+    // Fix negative rounding so "overdue by minutes" doesn't become -1 day
     const diffDays = diffMs >= 0 ? Math.floor(diffMs / msDay) : Math.ceil(diffMs / msDay);
     const absDays = Math.abs(diffDays);
+
+    // #d9534f fails WCAG AA (3.6:1) on the light selected background (#c9d6e6).
+    // Use a darker red on that surface to meet 4.5:1.
+    const dangerColor = isSelected && scheme !== 'dark' ? '#a51313' : '#d9534f';
 
     let statusText = '';
     let statusColor = sub;
@@ -409,19 +419,24 @@ export default function RemindersScreen() {
 
     if (diffDays > 0) {
       statusText = `${diffDays} day${diffDays === 1 ? '' : 's'} left`;
-      statusColor = diffDays <= 1 ? '#d9534f' : sub;
+      statusColor = diffDays <= 1 ? dangerColor : sub;
     } else if (diffDays === 0) {
       statusText = 'REPLACE TODAY';
-      statusColor = '#d9534f';
+      statusColor = dangerColor;
       isBold = true;
     } else {
       statusText = `EXPIRED: ${absDays} day${absDays === 1 ? '' : 's'}`;
-      statusColor = '#d9534f';
+      statusColor = dangerColor;
       isBold = true;
     }
 
     return (
-      <Pressable onPress={toggleSelect}>
+      <Pressable
+        onPress={toggleSelect}
+        accessibilityLabel={item.label}
+        accessibilityHint="Tap to view options"
+        accessibilityRole="button"
+      >
         <View style={isSelected ? styles.glowWrap : undefined}>
           <View
             style={[
@@ -442,8 +457,13 @@ export default function RemindersScreen() {
               </View>
 
               <View style={styles.rightCol}>
-                <Pressable style={[styles.btn, { backgroundColor: replaceBtnBg }]} onPress={() => confirmReplace(item)}>
-                  <Ionicons name="refresh" size={30} color="#fff" />
+                <Pressable
+                  style={[styles.btn, { backgroundColor: justReplaced ? '#2e7d32' : replaceBtnBg }]}
+                  onPress={() => !justReplaced && confirmReplace(item)}
+                  accessibilityLabel={justReplaced ? 'Replaced!' : `Replace ${item.label}`}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name={justReplaced ? 'checkmark' : 'refresh'} size={30} color="#fff" />
                 </Pressable>
               </View>
             </View>
@@ -513,6 +533,9 @@ export default function RemindersScreen() {
                 size={28}
                 color={headerFg}
                 onPress={() => setMenuVisible(true)}
+                accessibilityLabel="Open menu"
+                accessibilityRole="button"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               />
             </View>
 
@@ -681,6 +704,8 @@ export default function RemindersScreen() {
             <Pressable
               style={actionsStyles.option}
               onPress={() => selectedItem && openEditSafely(selectedItem)}
+              accessibilityLabel="Edit reminder"
+              accessibilityRole="button"
             >
               <Ionicons
                 name="build-outline"
@@ -700,6 +725,8 @@ export default function RemindersScreen() {
             <Pressable
               style={actionsStyles.option}
               onPress={() => selectedItem && confirmDelete(selectedItem)}
+              accessibilityLabel="Delete reminder"
+              accessibilityRole="button"
             >
               <Ionicons name="trash-outline" size={22} color="#d9534f" />
               <Text style={[actionsStyles.optionText, { color: '#d9534f' }]}>
@@ -713,6 +740,8 @@ export default function RemindersScreen() {
                 setActionsVisible(false);
                 setSelectedItem(null);
               }}
+              accessibilityLabel="Dismiss"
+              accessibilityRole="button"
             >
               <Text
                 style={[
@@ -729,18 +758,26 @@ export default function RemindersScreen() {
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={cancelDraft}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalWrap}
         >
           <View style={[styles.modalCard, { backgroundColor: sheetBg }]}>
             <View style={styles.modalHeader}>
-              <Pressable onPress={cancelDraft}>
-                <Text style={[styles.modalHeaderBtn, { color: '#c62828' }]}>Cancel</Text>
+              <Pressable
+                onPress={cancelDraft}
+                accessibilityLabel="Cancel"
+                accessibilityRole="button"
+              >
+                <Text style={[styles.modalHeaderBtn, { color: scheme === 'dark' ? '#ff5252' : '#c62828' }]}>Cancel</Text>
               </Pressable>
               <Text style={[styles.modalTitle, { color: fg }]}>
                 {draft?.id ? 'Edit Reminder' : 'New Reminder'}
               </Text>
-              <Pressable onPress={saveDraft}>
+              <Pressable
+                onPress={saveDraft}
+                accessibilityLabel="Save reminder"
+                accessibilityRole="button"
+              >
                 <Text style={[styles.modalHeaderBtn, { color: '#1976d2' }]}>Save</Text>
               </Pressable>
             </View>
@@ -761,14 +798,18 @@ export default function RemindersScreen() {
               <View style={[styles.stepperRow, { borderColor: border }]}>
                 <Pressable
                   style={styles.stepperBtn}
-                  onPress={() => setDraft(d => d ? { ...d, quantity: Math.max(1, d.quantity - 1) } : d)}
+                  onPress={() => setDraft(d => d ? { ...d, quantity: Math.max(0, d.quantity - 1) } : d)}
+                  accessibilityLabel="Decrease quantity"
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.stepperBtnText, { color: fg }]}>−</Text>
                 </Pressable>
-                <Text style={[styles.stepperValue, { color: fg }]}>{draft?.quantity ?? 1}</Text>
+                <Text style={[styles.stepperValue, { color: fg }]} accessibilityLabel={`Quantity: ${draft?.quantity ?? 1}`}>{draft?.quantity ?? 1}</Text>
                 <Pressable
                   style={styles.stepperBtn}
                   onPress={() => setDraft(d => d ? { ...d, quantity: d.quantity + 1 } : d)}
+                  accessibilityLabel="Increase quantity"
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.stepperBtnText, { color: fg }]}>+</Text>
                 </Pressable>
@@ -792,6 +833,9 @@ export default function RemindersScreen() {
               <Pressable
                 style={[styles.timeBtn, { borderColor: border }]}
                 onPress={() => setShowTime(true)}
+                accessibilityLabel={draft ? `Notification time: ${String(draft.time.getHours()).padStart(2, '0')}:${String(draft.time.getMinutes()).padStart(2, '0')}` : 'Set notification time'}
+                accessibilityRole="button"
+                accessibilityHint="Opens time picker"
               >
                 <Text style={{ color: fg }}>
                   {draft
@@ -827,6 +871,9 @@ export default function RemindersScreen() {
               <Pressable
                 style={[styles.timeBtn, { borderColor: border }]}
                 onPress={() => setShowLastReplaced(true)}
+                accessibilityLabel={draft ? `Last replaced: ${draft.lastReplaced.toLocaleDateString()}` : 'Set last replaced date'}
+                accessibilityRole="button"
+                accessibilityHint="Opens date picker"
               >
                 <Text style={{ color: fg }}>
                   {draft ? draft.lastReplaced.toLocaleDateString() : '--'}

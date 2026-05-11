@@ -35,22 +35,22 @@ export default function MenuSheet({ visible, onClose, onAdd, onAbout }: Props) {
         <View style={[styles.sheet, { backgroundColor: bg }]}>
           <Text style={[styles.sheetTitle, { color: fg }]}>Menu</Text>
 
-          <Pressable style={styles.option} onPress={onAdd}>
+          <Pressable style={styles.option} onPress={onAdd} accessibilityLabel="Add reminder" accessibilityRole="button">
             <Ionicons name="add-circle-outline" size={22} color={fg} />
             <Text style={[styles.optionText, { color: fg }]}>Add Reminder</Text>
           </Pressable>
 
-          <Pressable style={styles.option} onPress={openSurveyExternal}>
+          <Pressable style={styles.option} onPress={openSurveyExternal} accessibilityLabel="Open beta survey" accessibilityRole="button" accessibilityHint="Opens in your browser">
             <Ionicons name="open-outline" size={22} color={fg} />
             <Text style={[styles.optionText, { color: fg }]}>Beta Survey</Text>
           </Pressable>
 
-          <Pressable style={styles.option} onPress={onAbout}>
+          <Pressable style={styles.option} onPress={onAbout} accessibilityLabel="About CPAPi" accessibilityRole="button">
             <Ionicons name="information-circle-outline" size={22} color={fg} />
             <Text style={[styles.optionText, { color: fg }]}>About</Text>
           </Pressable>
 
-          <Pressable style={styles.cancelBtn} onPress={onClose}>
+          <Pressable style={styles.cancelBtn} onPress={onClose} accessibilityLabel="Close menu" accessibilityRole="button">
             <Text style={[styles.cancelText, { color: sub }]}>Cancel</Text>
           </Pressable>
         </View>
