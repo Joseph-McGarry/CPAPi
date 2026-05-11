@@ -63,9 +63,9 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   overlayTop: { flex: 1 },
   sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20 },
-  sheetTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  sheetTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10, fontFamily: 'DMSans_700Bold' },
   option: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },
-  optionText: { fontSize: 16 },
+  optionText: { fontSize: 16, fontFamily: 'Inter_400Regular' },
   cancelBtn: { marginTop: 10, alignItems: 'center', paddingVertical: 10 },
-  cancelText: { fontSize: 15 },
+  cancelText: { fontSize: 15, fontFamily: 'Inter_400Regular' },
 });

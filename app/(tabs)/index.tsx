@@ -87,6 +87,9 @@ export default function RemindersScreen() {
   const [justReplacedId, setJustReplacedId] = useState<number | null>(null);
   const justReplacedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Guard against double-tap on Save
+  const isSavingRef = useRef(false);
+
   // Star seed — refreshes every day at noon
   const [starSeed, setStarSeed] = useState(getDailySeed);
   useEffect(() => {
@@ -246,7 +249,8 @@ export default function RemindersScreen() {
   };
 
   const saveDraft = async () => {
-    if (!draft) return;
+    if (!draft || isSavingRef.current) return;
+    isSavingRef.current = true;
 
     const hour = draft.time.getHours();
     const minute = draft.time.getMinutes();
@@ -304,6 +308,8 @@ export default function RemindersScreen() {
     } catch (e: unknown) {
       console.error('saveDraft error:', e);
       Alert.alert('Save failed', e instanceof Error ? e.message : 'Could not save reminder. Please try again.');
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -318,12 +324,17 @@ export default function RemindersScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const fresh = await getSupplyById(row.id);
-            if (fresh?.notificationId) await cancelAllByRaw(fresh.notificationId);
-            await deleteSupplyById(row.id);
-            if (selectedItem?.id === row.id) setSelectedItem(null);
-            setActionsVisible(false);
-            await load();
+            try {
+              const fresh = await getSupplyById(row.id);
+              if (fresh?.notificationId) await cancelAllByRaw(fresh.notificationId);
+              await deleteSupplyById(row.id);
+              if (selectedItem?.id === row.id) setSelectedItem(null);
+              setActionsVisible(false);
+              await load();
+            } catch (e: unknown) {
+              console.error('confirmDelete error:', e);
+              Alert.alert('Delete failed', 'Could not delete reminder. Please try again.');
+            }
           },
         },
       ],
@@ -449,7 +460,7 @@ export default function RemindersScreen() {
           >
             <View style={styles.cardRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.cardTitle, { color: fg }]}>{item.label}</Text>
+                <Text style={[styles.cardTitle, { color: fg }]} numberOfLines={2}>{item.label}</Text>
 
                 <Text style={{ color: statusColor, fontWeight: isBold ? '700' : '400' }}>
                   {statusText}
@@ -792,6 +803,7 @@ export default function RemindersScreen() {
                 onSubmitEditing={saveDraft}
                 returnKeyType="done"
                 style={[styles.input, { color: fg, borderColor: border }]}
+                accessibilityLabel="Supply name"
               />
 
               <Text style={[styles.label, { color: sub }]}>Quantity</Text>
@@ -850,8 +862,8 @@ export default function RemindersScreen() {
                 <View style={styles.iosTimeWrap}>
                   {Platform.OS === 'ios' && (
                     <View style={styles.iosToolbar}>
-                      <Pressable onPress={() => setShowTime(false)}>
-                        <Text style={{ color: '#1976d2', fontWeight: '600' }}>Done</Text>
+                      <Pressable onPress={() => setShowTime(false)} accessibilityLabel="Confirm time" accessibilityRole="button">
+                        <Text style={{ color: '#1976d2', fontWeight: '600', fontFamily: 'Inter_600SemiBold' }}>Done</Text>
                       </Pressable>
                     </View>
                   )}
@@ -884,8 +896,8 @@ export default function RemindersScreen() {
                 <View style={styles.iosTimeWrap}>
                   {Platform.OS === 'ios' && (
                     <View style={styles.iosToolbar}>
-                      <Pressable onPress={() => setShowLastReplaced(false)}>
-                        <Text style={{ color: '#1976d2', fontWeight: '600' }}>Done</Text>
+                      <Pressable onPress={() => setShowLastReplaced(false)} accessibilityLabel="Confirm date" accessibilityRole="button">
+                        <Text style={{ color: '#1976d2', fontWeight: '600', fontFamily: 'Inter_600SemiBold' }}>Done</Text>
                       </Pressable>
                     </View>
                   )}
@@ -920,8 +932,6 @@ export default function RemindersScreen() {
               {
                 backgroundColor: sheetBg,
                 borderColor: scheme === 'dark' ? '#2b3a54' : '#e4e4e4',
-                // backgroundColor: scheme === 'dark' ? '#0f1a2a' : '#ffffff',
-                // borderColor: scheme === 'dark' ? '#2b3a54' : '#e4e4e4',
               },
             ]}
           >
@@ -929,14 +939,14 @@ export default function RemindersScreen() {
               <Text style={[aboutStyles.title, { color: scheme === 'dark' ? '#fff' : '#000' }]}>
                 About CPAPi
               </Text>
-              <Pressable onPress={() => setAboutVisible(false)} hitSlop={10}>
+              <Pressable onPress={() => setAboutVisible(false)} hitSlop={10} accessibilityLabel="Close About" accessibilityRole="button">
                 <Ionicons name="close" size={22} color={scheme === 'dark' ? '#fff' : '#000'} />
               </Pressable>
             </View>
 
             <ScrollView contentContainerStyle={aboutStyles.content}>{renderAboutContent()}</ScrollView>
 
-            <Pressable style={aboutStyles.closeBtn} onPress={() => setAboutVisible(false)}>
+            <Pressable style={aboutStyles.closeBtn} onPress={() => setAboutVisible(false)} accessibilityLabel="Close About" accessibilityRole="button">
               <Text style={aboutStyles.closeText}>Close</Text>
             </Pressable>
           </View>
@@ -981,12 +991,11 @@ const styles = StyleSheet.create({
   },
 
   side: { flex: 1, alignItems: 'flex-start', justifyContent: 'center' },
-  title: { flex: 2, fontSize: 24, fontWeight: '700', textAlign: 'center' },
+  title: { flex: 2, fontSize: 24, fontWeight: '700', textAlign: 'center', fontFamily: 'DMSans_700Bold' },
 
-  metaLabel: { fontWeight: '600' },
-  metaValue: { fontWeight: '400' },
+  metaLabel: { fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
+  metaValue: { fontWeight: '400', fontFamily: 'Inter_400Regular' },
 
-  // ✅ Added subtle border so translucent cards still read well
   card: {
     padding: 18,
     borderRadius: 16,
@@ -995,7 +1004,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
 
-  cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 4, fontFamily: 'DMSans_600SemiBold' },
   cardRow: { flexDirection: 'row', alignItems: 'stretch' },
   rightCol: { alignItems: 'flex-end', justifyContent: 'flex-end' },
 
@@ -1048,11 +1057,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  modalHeaderBtn: { fontSize: 16, fontWeight: '700' },
-  modalTitle: { fontSize: 18, fontWeight: '700' },
+  modalHeaderBtn: { fontSize: 16, fontWeight: '700', fontFamily: 'Inter_600SemiBold' },
+  modalTitle: { fontSize: 18, fontWeight: '700', fontFamily: 'DMSans_700Bold' },
   modalContent: { paddingHorizontal: 16, paddingBottom: 24 },
-  label: { fontSize: 12, marginTop: 6, marginBottom: 4 },
-  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10 },
+  label: { fontSize: 12, marginTop: 6, marginBottom: 4, fontFamily: 'Inter_400Regular' },
+  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10, fontFamily: 'Inter_400Regular' },
   pickerWrap: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
   stepperRow: {
     flexDirection: 'row',
@@ -1066,8 +1075,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
   },
-  stepperBtnText: { fontSize: 20, fontWeight: '600' },
-  stepperValue: { flex: 1, textAlign: 'center', fontSize: 16 },
+  stepperBtnText: { fontSize: 20, fontWeight: '600', fontFamily: 'Inter_600SemiBold' },
+  stepperValue: { flex: 1, textAlign: 'center', fontSize: 16, fontFamily: 'Inter_400Regular' },
   timeBtn: {
     borderWidth: 1,
     borderRadius: 8,
@@ -1089,11 +1098,11 @@ const actionsStyles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   overlayTop: { flex: 1 },
   sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20 },
-  sheetTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  sheetTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6, fontFamily: 'DMSans_700Bold' },
   option: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },
-  optionText: { fontSize: 16 },
+  optionText: { fontSize: 16, fontFamily: 'Inter_400Regular' },
   cancelBtn: { marginTop: 10, alignItems: 'center', paddingVertical: 10 },
-  cancelText: { fontSize: 15 },
+  cancelText: { fontSize: 15, fontFamily: 'Inter_400Regular' },
 });
 
 const aboutStyles = StyleSheet.create({
@@ -1112,7 +1121,7 @@ const aboutStyles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  title: { fontSize: 18, fontWeight: '700' },
+  title: { fontSize: 18, fontWeight: '700', fontFamily: 'DMSans_700Bold' },
   content: { paddingVertical: 4 },
   closeBtn: {
     marginTop: 12,
@@ -1120,7 +1129,7 @@ const aboutStyles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 10,
-    backgroundColor: '#7687a0',
+    backgroundColor: '#506178', // darkened from #7687a0 to pass WCAG AA with white text
   },
-  closeText: { color: '#fff', fontWeight: '700' },
+  closeText: { color: '#fff', fontWeight: '700', fontFamily: 'Inter_600SemiBold' },
 });

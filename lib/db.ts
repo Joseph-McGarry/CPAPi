@@ -169,9 +169,3 @@ export async function markReplacedNowById(id: number): Promise<void> {
   await db.runAsync(`UPDATE supplies SET lastReplaced=? WHERE id=?;`, [nowIso, id]);
 }
 
-// (Kept for compatibility if you still call by skey somewhere)
-export async function markReplacedNow(skey: SupplyKey): Promise<void> {
-  const db = await getDb();
-  const nowIso = new Date().toISOString();
-  await db.runAsync(`UPDATE supplies SET lastReplaced=? WHERE skey=?;`, [nowIso, skey]);
-}

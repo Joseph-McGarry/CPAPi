@@ -68,7 +68,15 @@ const BackgroundStars: React.FC<Props> = ({
   if (!visible) return null;
 
   return (
-    <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Svg
+      width={width}
+      height={height}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      accessible={false}
+      accessibilityElementsHidden={true}
+      importantForAccessibility="no-hide-descendants"
+    >
       {stars.map((s) => (
         <Circle key={`${s.x.toFixed(2)},${s.y.toFixed(2)}`} cx={s.x} cy={s.y} r={s.r} fill={`rgba(255,255,255,${s.alpha})`} />
       ))}
