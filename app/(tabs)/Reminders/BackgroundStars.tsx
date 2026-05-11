@@ -69,8 +69,8 @@ const BackgroundStars: React.FC<Props> = ({
 
   return (
     <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
-      {stars.map((s, i) => (
-        <Circle key={i} cx={s.x} cy={s.y} r={s.r} fill={`rgba(255,255,255,${s.alpha})`} />
+      {stars.map((s) => (
+        <Circle key={`${s.x.toFixed(2)},${s.y.toFixed(2)}`} cx={s.x} cy={s.y} r={s.r} fill={`rgba(255,255,255,${s.alpha})`} />
       ))}
     </Svg>
   );

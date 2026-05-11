@@ -15,7 +15,9 @@ const openSurveyExternal = async () => {
   try {
     const supported = await Linking.canOpenURL(SURVEY_URL);
     if (supported) await Linking.openURL(SURVEY_URL);
-  } catch {}
+  } catch (e: unknown) {
+    console.warn('Could not open survey URL:', e);
+  }
 };
 
 export default function MenuSheet({ visible, onClose, onAdd, onAbout }: Props) {

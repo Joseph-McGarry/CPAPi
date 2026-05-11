@@ -36,6 +36,9 @@ import BackgroundStars from './Reminders/BackgroundStars';
 import type { DateTriggerInput } from 'expo-notifications';
 import { BlurView } from 'expo-blur';
 
+const NAG_COUNT = 10; // 5 days of 12h nags
+const MS_12H = 12 * 60 * 60 * 1000;
+
 const INTERVALS = [
   { label: '1 week', days: 7 },
   { label: '2 weeks', days: 14 },
@@ -117,15 +120,10 @@ export default function RemindersScreen() {
     load();
   }, []);
 
-  // const fmtTime = (h: number, m: number) =>
-  //   `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   const fmtTime12 = (h: number, m: number) =>
-  new Date(0, 0, 0, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
+    new Date(0, 0, 0, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   /** ---------- Notification helpers (12h “nag” chain) ---------- */
-  const NAG_COUNT = 10; // 5 days of 12h nags
-  const MS_12H = 12 * 60 * 60 * 1000;
 
   const parseIds = (raw?: string | null) =>
     (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []) as string[];
@@ -216,49 +214,54 @@ export default function RemindersScreen() {
     const minute = draft.time.getMinutes();
     const label = (draft.label || '').trim() || 'Untitled';
 
-    if (draft.id) {
-      const existing = await getSupplyById(draft.id);
+    try {
+      if (draft.id) {
+        const existing = await getSupplyById(draft.id);
 
-      if (existing?.notificationId) {
-        await cancelAllByRaw(existing.notificationId);
-        await updateNotificationId(draft.id, null);
-      }
+        if (existing?.notificationId) {
+          await cancelAllByRaw(existing.notificationId);
+          await updateNotificationId(draft.id, null);
+        }
 
-      await updateSupplyById(draft.id, {
-        label,
-        intervalDays: draft.intervalDays,
-        notifyHour: hour,
-        notifyMinute: minute,
-      });
+        await updateSupplyById(draft.id, {
+          label,
+          intervalDays: draft.intervalDays,
+          notifyHour: hour,
+          notifyMinute: minute,
+        });
 
-      const updated = await getSupplyById(draft.id);
-      if (updated) {
+        const updated = await getSupplyById(draft.id);
+        if (updated) {
+          const due = nextDueDate(
+            updated.lastReplaced,
+            updated.intervalDays,
+            updated.notifyHour,
+            updated.notifyMinute
+          );
+          await scheduleDueWithNags(updated.id, updated.label, due);
+        }
+
+        setSelectedItem(null);
+        setActionsVisible(false);
+      } else {
+        const created = await createSupply(label, draft.intervalDays, hour, minute);
         const due = nextDueDate(
-          updated.lastReplaced,
-          updated.intervalDays,
-          updated.notifyHour,
-          updated.notifyMinute
+          created.lastReplaced,
+          created.intervalDays,
+          created.notifyHour,
+          created.notifyMinute
         );
-        await scheduleDueWithNags(updated.id, updated.label, due);
+        await scheduleDueWithNags(created.id, created.label, due);
       }
 
-      setSelectedItem(null);
-      setActionsVisible(false);
-    } else {
-      const created = await createSupply(label, draft.intervalDays, hour, minute);
-      const due = nextDueDate(
-        created.lastReplaced,
-        created.intervalDays,
-        created.notifyHour,
-        created.notifyMinute
-      );
-      await scheduleDueWithNags(created.id, created.label, due);
+      setOpen(false);
+      setDraft(null);
+      setShowTime(false);
+      await load();
+    } catch (e: unknown) {
+      console.error('saveDraft error:', e);
+      Alert.alert('Save failed', e instanceof Error ? e.message : 'Could not save reminder. Please try again.');
     }
-
-    setOpen(false);
-    setDraft(null);
-    setShowTime(false);
-    await load();
   };
 
   /** ---------- Delete flow ---------- */
@@ -287,24 +290,29 @@ export default function RemindersScreen() {
 
   /** ---------- Replace flow (confirm + act) ---------- */
   const actuallyReplace = async (r: SupplyRow) => {
-    const current = await getSupplyById(r.id);
-    if (current?.notificationId) {
-      await cancelAllByRaw(current.notificationId);
-      await updateNotificationId(r.id, null);
+    try {
+      const current = await getSupplyById(r.id);
+      if (current?.notificationId) {
+        await cancelAllByRaw(current.notificationId);
+        await updateNotificationId(r.id, null);
+      }
+
+      await markReplacedNowById(r.id);
+
+      // Compute due using the same helper UI uses
+      const due = nextDueDate(
+        new Date().toISOString(),
+        r.intervalDays,
+        r.notifyHour,
+        r.notifyMinute
+      );
+
+      await scheduleDueWithNags(r.id, r.label, due);
+      await load();
+    } catch (e: unknown) {
+      console.error('actuallyReplace error:', e);
+      Alert.alert('Error', 'Could not record replacement. Please try again.');
     }
-
-    await markReplacedNowById(r.id);
-
-    // Compute due using the same helper UI uses
-    const due = nextDueDate(
-      new Date().toISOString(),
-      r.intervalDays,
-      r.notifyHour,
-      r.notifyMinute
-    );
-
-    await scheduleDueWithNags(r.id, r.label, due);
-    await load();
   };
 
   const confirmReplace = (r: SupplyRow) => {
@@ -862,7 +870,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.7,
         shadowRadius: 5,
       },
-      android: {},
     }),
   },
 

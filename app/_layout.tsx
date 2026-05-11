@@ -28,10 +28,12 @@ export default function RootLayout() {
       try {
         await initDatabase();
         await seedDefaults();
-        if (Platform.OS === 'ios') await Notifications.requestPermissionsAsync();
-      } catch (e: any) {
+        if (Platform.OS === 'ios' || Platform.OS === 'android') {
+          await Notifications.requestPermissionsAsync();
+        }
+      } catch (e: unknown) {
         console.error('Boot error:', e);
-        setBootError(String(e?.message || e));
+        setBootError(e instanceof Error ? e.message : String(e));
       } finally {
         setReady(true);
       }

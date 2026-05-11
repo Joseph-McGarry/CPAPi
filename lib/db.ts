@@ -22,7 +22,7 @@ async function getDb() {
   }
   if (!_db) {
     _db = await SQLite.openDatabaseAsync('cpapi.db');
-    try { await _db.execAsync('PRAGMA journal_mode = WAL;'); } catch {}
+    try { await _db.execAsync('PRAGMA journal_mode = WAL;'); } catch (e) { console.warn('WAL mode unavailable:', e); }
   }
   return _db;
 }
@@ -40,11 +40,10 @@ export async function initDatabase(): Promise<void> {
       notifyMinute INTEGER NOT NULL
     );
   `);
-  // Add column if it doesn't exist (ignore error if it already exists)
-  try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN notificationId TEXT;`); } catch {}
+  // Add column if it doesn't exist (ignore error if column already exists)
+  try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN notificationId TEXT;`); } catch (e) { console.warn('notificationId column already exists or migration failed:', e); }
 }
 
-// 3) Add this helper:
 export async function updateNotificationId(id: number, notificationId: string | null): Promise<void> {
   const db = await getDb();
   await db.runAsync(`UPDATE supplies SET notificationId=? WHERE id=?;`, [notificationId, id]);
@@ -128,6 +127,7 @@ export async function createSupply(
     [skey, label, intervalDays, nowIso, notifyHour, notifyMinute]
   );
   const rows = await db.getAllAsync<SupplyRow>(`SELECT * FROM supplies WHERE skey=? LIMIT 1;`, [skey]);
+  if (!rows[0]) throw new Error(`createSupply: INSERT succeeded but row not found for skey="${skey}"`);
   return rows[0];
 }
 
