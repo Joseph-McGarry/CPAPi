@@ -636,67 +636,29 @@ export default function RemindersScreen() {
                   }}
                 />
 
-                <Text
-                  style={{
-                    color: scheme === 'dark' ? '#fff' : '#000',
-                    opacity: 0.85,
-                    marginBottom: 4,
-                    marginLeft: 6,
-                  }}
-                >
-                  Quantity: {selectedItem.quantity ?? 1}
+                <Text style={{ color: scheme === 'dark' ? '#fff' : '#000', opacity: 0.85, marginBottom: 4, marginLeft: 6 }}>
+                  <Text style={{ fontWeight: '700', fontFamily: 'DMSans_700Bold' }}>Quantity:</Text>
+                  {` ${selectedItem.quantity ?? 1}`}
                 </Text>
 
-                <Text
-                  style={{
-                    color: scheme === 'dark' ? '#fff' : '#000',
-                    opacity: 0.85,
-                    marginBottom: 4,
-                    marginLeft: 6,
-                  }}
-                >
-                  Interval: {selectedItem.intervalDays} days
+                <Text style={{ color: scheme === 'dark' ? '#fff' : '#000', opacity: 0.85, marginBottom: 4, marginLeft: 6 }}>
+                  <Text style={{ fontWeight: '700', fontFamily: 'DMSans_700Bold' }}>Interval:</Text>
+                  {` ${selectedItem.intervalDays} days`}
                 </Text>
 
-                <Text
-                  style={{
-                    color: scheme === 'dark' ? '#fff' : '#000',
-                    opacity: 0.85,
-                    marginBottom: 4,
-                    marginLeft: 6,
-                  }}
-                >
-                  Notification Time: {fmtTime12(selectedItem.notifyHour, selectedItem.notifyMinute)}
+                <Text style={{ color: scheme === 'dark' ? '#fff' : '#000', opacity: 0.85, marginBottom: 4, marginLeft: 6 }}>
+                  <Text style={{ fontWeight: '700', fontFamily: 'DMSans_700Bold' }}>Notification Time:</Text>
+                  {` ${fmtTime12(selectedItem.notifyHour, selectedItem.notifyMinute)}`}
                 </Text>
 
-                <Text
-                  style={{
-                    color: scheme === 'dark' ? '#fff' : '#000',
-                    opacity: 0.85,
-                    marginBottom: 4,
-                    marginLeft: 6,
-                  }}
-                >
-                  Next Replacement:{' '}
-                  {(() => {
-                    const due = nextDueDate(
-                      selectedItem.lastReplaced,
-                      selectedItem.intervalDays,
-                      selectedItem.notifyHour,
-                      selectedItem.notifyMinute
-                    );
-                    return due.toLocaleDateString(); // ✅ date only
-                  })()}
+                <Text style={{ color: scheme === 'dark' ? '#fff' : '#000', opacity: 0.85, marginBottom: 4, marginLeft: 6 }}>
+                  <Text style={{ fontWeight: '700', fontFamily: 'DMSans_700Bold' }}>Next Replacement:</Text>
+                  {` ${nextDueDate(selectedItem.lastReplaced, selectedItem.intervalDays, selectedItem.notifyHour, selectedItem.notifyMinute).toLocaleDateString()}`}
                 </Text>
 
-                <Text
-                  style={{
-                    color: scheme === 'dark' ? '#fff' : '#000',
-                    opacity: 0.85,
-                    marginLeft: 6,
-                  }}
-                >
-                  Last Replaced: {new Date(selectedItem.lastReplaced).toLocaleDateString()}
+                <Text style={{ color: scheme === 'dark' ? '#fff' : '#000', opacity: 0.85, marginLeft: 6 }}>
+                  <Text style={{ fontWeight: '700', fontFamily: 'DMSans_700Bold' }}>Last Replaced:</Text>
+                  {` ${new Date(selectedItem.lastReplaced).toLocaleDateString()}`}
                 </Text>
 
                 {/* divider */}
