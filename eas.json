@@ -25,6 +25,7 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "testflight": {}
   }
 }
