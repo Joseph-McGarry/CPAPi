@@ -338,6 +338,9 @@ export default function RemindersScreen() {
 
       await markReplacedNowById(r.id);
 
+      const newQuantity = Math.max(0, (current?.quantity ?? r.quantity ?? 1) - 1);
+      await updateSupplyById(r.id, { quantity: newQuantity });
+
       // Compute due using the same helper UI uses
       const due = nextDueDate(
         new Date().toISOString(),
