@@ -53,8 +53,17 @@ type Draft = {
   id?: number;
   label: string;
   intervalDays: number;
+  quantity: number;
   time: Date;
+  lastReplaced: Date;
 };
+
+/** Returns an integer seed that changes every day at noon. */
+function getDailySeed(): number {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const noonOffsetMs = 12 * 60 * 60 * 1000;
+  return Math.floor((Date.now() - noonOffsetMs) / msPerDay);
+}
 
 export default function RemindersScreen() {
   const scheme = useColorScheme();
@@ -72,6 +81,26 @@ export default function RemindersScreen() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showTime, setShowTime] = useState(false);
+  const [showLastReplaced, setShowLastReplaced] = useState(false);
+
+  // Star seed — refreshes every day at noon
+  const [starSeed, setStarSeed] = useState(getDailySeed);
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const now = new Date();
+    const nextNoon = new Date(now);
+    nextNoon.setHours(12, 0, 0, 0);
+    if (now >= nextNoon) nextNoon.setDate(nextNoon.getDate() + 1);
+    const msUntilNextNoon = nextNoon.getTime() - now.getTime();
+    const timeoutId = setTimeout(() => {
+      setStarSeed(getDailySeed());
+      intervalId = setInterval(() => setStarSeed(getDailySeed()), 24 * 60 * 60 * 1000);
+    }, msUntilNextNoon);
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
   // selection
   const [selectedItem, setSelectedItem] = useState<SupplyRow | null>(null);
@@ -175,16 +204,20 @@ export default function RemindersScreen() {
   const startAdd = () => {
     const t = new Date();
     t.setHours(21, 0, 0, 0);
-    setDraft({ label: '', intervalDays: 7, time: t });
+    const lr = new Date();
+    setDraft({ label: '', intervalDays: 7, quantity: 1, time: t, lastReplaced: lr });
     setShowTime(false);
+    setShowLastReplaced(false);
     setOpen(true);
   };
 
   const startEdit = (r: SupplyRow) => {
     const t = new Date();
     t.setHours(r.notifyHour, r.notifyMinute, 0, 0);
-    setDraft({ id: r.id, label: r.label, intervalDays: r.intervalDays, time: t });
+    const lr = r.lastReplaced ? new Date(r.lastReplaced) : new Date();
+    setDraft({ id: r.id, label: r.label, intervalDays: r.intervalDays, quantity: r.quantity ?? 1, time: t, lastReplaced: lr });
     setShowTime(false);
+    setShowLastReplaced(false);
     setOpen(true);
   };
 
@@ -205,6 +238,7 @@ export default function RemindersScreen() {
     setOpen(false);
     setDraft(null);
     setShowTime(false);
+    setShowLastReplaced(false);
   };
 
   const saveDraft = async () => {
@@ -213,6 +247,8 @@ export default function RemindersScreen() {
     const hour = draft.time.getHours();
     const minute = draft.time.getMinutes();
     const label = (draft.label || '').trim() || 'Untitled';
+
+    const lastReplacedIso = draft.lastReplaced.toISOString();
 
     try {
       if (draft.id) {
@@ -228,6 +264,8 @@ export default function RemindersScreen() {
           intervalDays: draft.intervalDays,
           notifyHour: hour,
           notifyMinute: minute,
+          quantity: draft.quantity,
+          lastReplaced: lastReplacedIso,
         });
 
         const updated = await getSupplyById(draft.id);
@@ -244,7 +282,7 @@ export default function RemindersScreen() {
         setSelectedItem(null);
         setActionsVisible(false);
       } else {
-        const created = await createSupply(label, draft.intervalDays, hour, minute);
+        const created = await createSupply(label, draft.intervalDays, hour, minute, draft.quantity, lastReplacedIso);
         const due = nextDueDate(
           created.lastReplaced,
           created.intervalDays,
@@ -257,6 +295,7 @@ export default function RemindersScreen() {
       setOpen(false);
       setDraft(null);
       setShowTime(false);
+      setShowLastReplaced(false);
       await load();
     } catch (e: unknown) {
       console.error('saveDraft error:', e);
@@ -438,7 +477,7 @@ export default function RemindersScreen() {
   return (
     <>
       <LinearGradient colors={gradientColors} style={styles.container}>
-        <BackgroundStars visible={scheme === 'dark'} seed={42} />
+        <BackgroundStars visible={scheme === 'dark'} seed={starSeed} />
 
         <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
           <View pointerEvents="none" style={styles.headerBackdrop}>
@@ -559,6 +598,17 @@ export default function RemindersScreen() {
                     marginVertical: 8,
                   }}
                 />
+
+                <Text
+                  style={{
+                    color: scheme === 'dark' ? '#fff' : '#000',
+                    opacity: 0.85,
+                    marginBottom: 4,
+                    marginLeft: 6,
+                  }}
+                >
+                  Quantity: {selectedItem.quantity ?? 1}
+                </Text>
 
                 <Text
                   style={{
@@ -704,6 +754,23 @@ export default function RemindersScreen() {
                 style={[styles.input, { color: fg, borderColor: border }]}
               />
 
+              <Text style={[styles.label, { color: sub }]}>Quantity</Text>
+              <View style={[styles.stepperRow, { borderColor: border }]}>
+                <Pressable
+                  style={styles.stepperBtn}
+                  onPress={() => setDraft(d => d ? { ...d, quantity: Math.max(1, d.quantity - 1) } : d)}
+                >
+                  <Text style={[styles.stepperBtnText, { color: fg }]}>−</Text>
+                </Pressable>
+                <Text style={[styles.stepperValue, { color: fg }]}>{draft?.quantity ?? 1}</Text>
+                <Pressable
+                  style={styles.stepperBtn}
+                  onPress={() => setDraft(d => d ? { ...d, quantity: d.quantity + 1 } : d)}
+                >
+                  <Text style={[styles.stepperBtnText, { color: fg }]}>+</Text>
+                </Pressable>
+              </View>
+
               <Text style={[styles.label, { color: sub }]}>Interval</Text>
               <View style={[styles.pickerWrap, { borderColor: border }]}>
                 <Picker
@@ -747,6 +814,38 @@ export default function RemindersScreen() {
                     onChange={(e: DateTimePickerEvent, date?: Date) => {
                       if (Platform.OS !== 'ios') setShowTime(false);
                       if (date) setDraft(d => (d ? { ...d, time: date } : d));
+                    }}
+                    display="spinner"
+                  />
+                </View>
+              )}
+
+              <Text style={[styles.label, { color: sub }]}>Last Replaced</Text>
+              <Pressable
+                style={[styles.timeBtn, { borderColor: border }]}
+                onPress={() => setShowLastReplaced(true)}
+              >
+                <Text style={{ color: fg }}>
+                  {draft ? draft.lastReplaced.toLocaleDateString() : '--'}
+                </Text>
+              </Pressable>
+
+              {showLastReplaced && draft && (
+                <View style={styles.iosTimeWrap}>
+                  {Platform.OS === 'ios' && (
+                    <View style={styles.iosToolbar}>
+                      <Pressable onPress={() => setShowLastReplaced(false)}>
+                        <Text style={{ color: '#1976d2', fontWeight: '600' }}>Done</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  <DateTimePicker
+                    mode="date"
+                    value={draft.lastReplaced}
+                    maximumDate={new Date()}
+                    onChange={(e: DateTimePickerEvent, date?: Date) => {
+                      if (Platform.OS !== 'ios') setShowLastReplaced(false);
+                      if (date) setDraft(d => (d ? { ...d, lastReplaced: date } : d));
                     }}
                     display="spinner"
                   />
@@ -905,6 +1004,20 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, marginTop: 6, marginBottom: 4 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10 },
   pickerWrap: { borderWidth: 1, borderRadius: 8, overflow: 'hidden' },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 2,
+  },
+  stepperBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  stepperBtnText: { fontSize: 20, fontWeight: '600' },
+  stepperValue: { flex: 1, textAlign: 'center', fontSize: 16 },
   timeBtn: {
     borderWidth: 1,
     borderRadius: 8,

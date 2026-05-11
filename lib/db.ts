@@ -11,6 +11,7 @@ export type SupplyRow = {
   lastReplaced: string; // ISO
   notifyHour: number;   // 0-23
   notifyMinute: number; // 0-59
+  quantity: number;     // how many to replace at once
   notificationId?: string | null;
 };
 
@@ -40,8 +41,9 @@ export async function initDatabase(): Promise<void> {
       notifyMinute INTEGER NOT NULL
     );
   `);
-  // Add column if it doesn't exist (ignore error if column already exists)
+  // Add columns if they don't exist (ignore error if column already exists)
   try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN notificationId TEXT;`); } catch (e) { console.warn('notificationId column already exists or migration failed:', e); }
+  try { await db.execAsync(`ALTER TABLE supplies ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1;`); } catch (e) { console.warn('quantity column already exists or migration failed:', e); }
 }
 
 export async function updateNotificationId(id: number, notificationId: string | null): Promise<void> {
@@ -116,15 +118,17 @@ export async function createSupply(
   label: string,
   intervalDays: number,
   notifyHour: number,
-  notifyMinute: number
+  notifyMinute: number,
+  quantity: number = 1,
+  lastReplacedIso?: string,
 ): Promise<SupplyRow> {
   const db = await getDb();
   const nowIso = new Date().toISOString();
   const skey = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`;
   await db.runAsync(
-    `INSERT INTO supplies (skey, label, intervalDays, lastReplaced, notifyHour, notifyMinute)
-     VALUES (?, ?, ?, ?, ?, ?);`,
-    [skey, label, intervalDays, nowIso, notifyHour, notifyMinute]
+    `INSERT INTO supplies (skey, label, intervalDays, lastReplaced, notifyHour, notifyMinute, quantity)
+     VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    [skey, label, intervalDays, lastReplacedIso ?? nowIso, notifyHour, notifyMinute, quantity]
   );
   const rows = await db.getAllAsync<SupplyRow>(`SELECT * FROM supplies WHERE skey=? LIMIT 1;`, [skey]);
   if (!rows[0]) throw new Error(`createSupply: INSERT succeeded but row not found for skey="${skey}"`);
@@ -133,7 +137,7 @@ export async function createSupply(
 
 export async function updateSupplyById(
   id: number,
-  updates: Partial<Pick<SupplyRow, 'label' | 'intervalDays' | 'notifyHour' | 'notifyMinute'>>
+  updates: Partial<Pick<SupplyRow, 'label' | 'intervalDays' | 'notifyHour' | 'notifyMinute' | 'quantity' | 'lastReplaced'>>
 ): Promise<void> {
   const db = await getDb();
   const current = await getSupplyById(id);
@@ -144,11 +148,13 @@ export async function updateSupplyById(
     intervalDays: updates.intervalDays ?? current.intervalDays,
     notifyHour: updates.notifyHour ?? current.notifyHour,
     notifyMinute: updates.notifyMinute ?? current.notifyMinute,
+    quantity: updates.quantity ?? current.quantity ?? 1,
+    lastReplaced: updates.lastReplaced ?? current.lastReplaced,
   };
 
   await db.runAsync(
-    `UPDATE supplies SET label=?, intervalDays=?, notifyHour=?, notifyMinute=? WHERE id=?;`,
-    [next.label, next.intervalDays, next.notifyHour, next.notifyMinute, id]
+    `UPDATE supplies SET label=?, intervalDays=?, notifyHour=?, notifyMinute=?, quantity=?, lastReplaced=? WHERE id=?;`,
+    [next.label, next.intervalDays, next.notifyHour, next.notifyMinute, next.quantity, next.lastReplaced, id]
   );
 }
 
